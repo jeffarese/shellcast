@@ -10,11 +10,19 @@ I got tired of my agent's shells being reduced to this:
 
 What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Same prompt, same project:
 
+**Stock Claude Code.** Three shell commands fold into "Ran 3 shell commands", and the e2e suite is a "1 shell" in the footer while the agent writes:
+
 <p align="center">
-  <img src="assets/demo.gif" alt="Side by side: stock Claude Code collapses shells into 'Ran 3 shell commands'; with shellcast each one is a live card with output, progress bars and a one-line summary" width="100%">
+  <img src="assets/before.gif" alt="Stock Claude Code: shells fold into 'Ran 3 shell commands' and the background e2e suite is only '1 shell' in the footer" width="100%">
 </p>
 
-<p align="center"><sub>Left: stock Claude Code. Right: with shellcast. <a href="assets/demo.mp4">Full-quality MP4</a>.</sub></p>
+**With shellcast.** Same agent, same commands, same moment: each shell has its card, and the e2e suite stays pinned above the prompt with its progress until it ends:
+
+<p align="center">
+  <img src="assets/after.gif" alt="With shellcast: each shell is a card, finished ones fold into one-liners, and the background e2e suite stays pinned above the prompt with a live progress bar" width="100%">
+</p>
+
+<p align="center"><sub>Both sessions replay the same scripted agent, so the only difference is shellcast. <a href="assets/side-by-side.mp4">Side-by-side MP4</a>.</sub></p>
 
 While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
 
@@ -59,6 +67,6 @@ claude plugin validate .                 # what the engine sees
 claude plugin test .                     # tests/*.test.ts(x)
 ```
 
-The demo was recorded from a real session against a throwaway sample project.
+The demos are real Claude Code sessions in a throwaway sample project, recorded with a scripted stand-in for the model so both runs behave identically.
 
 Layout: `hooks/register.tsx` (the hooks), `hooks/card.tsx` (drawing), `hooks/live.ts` (output tracking), `hooks/format.ts` (pure helpers), `types/index.d.ts` (the `$.state` contract).
