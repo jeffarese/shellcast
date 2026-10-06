@@ -220,33 +220,34 @@ async function startBackground(...[$, on]: Parameters<TestBody>) {
 
 const BAND = { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 90, scroll: { offset: 0, bodyRows: 10 }, view: {} }
 
-test('a background shell scrolled out of view stays pinned above the prompt', async ($, on) => {
-  const id = await startBackground($, on)
-  const card = await $.ui.mount({
-    plugin: PLUGIN,
-    surface: 'terminal',
-    component: 'ToolUse',
-    requestId: id,
-    viewport: VIEWPORT,
-    props: call({ tool_use_id: id, onScreen: null, output: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b42' } }),
-  })
-  expect(await card.find({ type: 'Text', text: 'background' })).toBeDefined()
+test('a running background shell is pinned above the prompt as its live card', async ($, on) => {
+  await startBackground($, on)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
   expect(await band.find({ type: 'Text', text: 'Run the e2e suite' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'background' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /waiting for output/ })).toBeDefined()
 })
 
-test('the band stays out of the way while the card itself is on screen', async ($, on) => {
+test('in the transcript it stays one row that points at the pinned card', async ($, on) => {
   const id = await startBackground($, on)
-  await $.ui.mount({
+  const row = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
     component: 'ToolUse',
     requestId: id,
     viewport: VIEWPORT,
-    props: call({ tool_use_id: id, onScreen: { first: 0, last: 5, of: 6 }, output: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b42' } }),
+    props: call({ tool_use_id: id, output: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b42' } }),
   })
-  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
-  expect(await band.find({ type: 'Text', text: 'Run the e2e suite' })).toBeUndefined()
+  expect(await row.find({ type: 'Text', text: /^pinned ↓/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /waiting for output/ })).toBeUndefined()
+})
+
+test('a pinned band with little room falls back to one row per shell', async ($, on) => {
+  await startBackground($, on)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: { ...BAND, maxRows: 3 } })
+  expect(await band.find({ type: 'Text', text: /Run the e2e suite/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /waiting for output/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'background' })).toBeUndefined()
 })
 
 test("the footer's shell count says what the shell is doing", async ($, on) => {

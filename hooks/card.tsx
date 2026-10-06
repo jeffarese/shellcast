@@ -120,7 +120,9 @@ function Header(
   const { Box, Text, Button } = card.els
   return (
     <Box>
-      <Text color={glyphColor} bold>{`${glyph} `}</Text>
+      <Box flexShrink={0}>
+        <Text color={glyphColor} bold>{`${glyph} `}</Text>
+      </Box>
       <Box flexGrow={1} flexShrink={1}>
         <Text wrap="truncate-end">
           <Text bold>{card.title}</Text>
@@ -174,6 +176,24 @@ function OutputLines(card: Card, lines: readonly string[], gutter: string, color
       ))}
     </Box>
   )
+}
+
+/**
+ * Exactly `count` output rows, the newest last, blank rows first while output
+ * is sparse: a live card keeps its height from its first frame to its last.
+ */
+function LiveLines(card: Card, tail: readonly string[], count: number, gutter: string): RenderElement {
+  const { Box, Text } = card.els
+  if (tail.length === 0) {
+    return (
+      <Box flexDirection="column">
+        <Text dimColor italic>{'▏ waiting for output…'}</Text>
+        {Array.from({ length: count - 1 }, () => <Text>{' '}</Text>)}
+      </Box>
+    )
+  }
+  const shown = tail.slice(-count)
+  return OutputLines(card, [...Array.from({ length: count - shown.length }, () => ''), ...shown], gutter)
 }
 
 /** The live meter: a real bar when the output reports progress, else a shimmer. */
@@ -278,13 +298,18 @@ function Running(card: Card): RenderElement {
         <Text color="claude">{elapsed === undefined ? 'running' : duration(elapsed)}</Text>,
       ])}
       {CommandLine(card, card.isOpen)}
-      {tail.length > 0 ? OutputLines(card, tail, 'bashBorder') : <Text dimColor italic>{'▏ waiting for output…'}</Text>}
+      {card.isOpen ? OutputLines(card, tail, 'bashBorder') : LiveLines(card, tail, LIVE_LINES, 'bashBorder')}
       {Meter(card)}
       {Stats(card, false)}
     </Box>
   )
 }
 
+/**
+ * A running background shell's live card, pinned above the prompt: always
+ * the same rows (header, command, three output lines, meter, stats), so the
+ * prompt under it never moves while the shell runs.
+ */
 function BackgroundLive(card: Card, taskId: string): RenderElement {
   const { Box, Text } = card.els
   const { run } = card
@@ -297,10 +322,9 @@ function BackgroundLive(card: Card, taskId: string): RenderElement {
         <Text dimColor>{` · ${taskId}`}</Text>,
         <Text dimColor>{elapsed === undefined ? '' : ` · ${duration(elapsed)}`}</Text>,
       ])}
-      {CommandLine(card, card.isOpen)}
-      {run.tail.length > 0
-        ? OutputLines(card, run.tail.slice(card.isOpen ? -20 : -BACKGROUND_LINES), 'suggestion')
-        : <Text dimColor italic>{'▏ waiting for output…'}</Text>}
+      {CommandLine(card, false)}
+      {LiveLines(card, run.tail, BACKGROUND_LINES, 'suggestion')}
+      {Meter(card)}
       {Stats(card, true)}
     </Box>
   )
@@ -417,9 +441,12 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
   if (taskId !== undefined) {
     const status = run.background?.status
     const isLive = run.startedAt !== 0 && (status === undefined || status === 'running')
-    if (isLive && card.ownsOutput) return BackgroundLive(card, taskId)
     if (isLive) {
-      return Compact(card, '◉', 'suggestion', `moved to background · ${taskId}`, [], chips, null)
+      // Its live card is pinned above the prompt; here it stays one row, so
+      // the transcript never reflows as the shell runs or ends.
+      const elapsed = elapsedOf(run)
+      const meta = `pinned ↓${elapsed === undefined ? '' : ` · ${duration(elapsed)}`}`
+      return Compact(card, run.ticks % 4 < 2 ? '◉' : '○', 'suggestion', meta, [], chips, null, 'suggestion')
     }
     if (status === undefined) {
       return Compact(card, '◉', 'suggestion', `background · ${taskId}`, [], chips, Details(card, output, undefined))
@@ -451,12 +478,10 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
   )
 }
 
-/** Background shells pinned above the prompt, at most this many rows. */
-const BAND_ROWS = 3
 const BAND_METER = 14
 
 /** A running background shell, for the band and the footer. */
-export type Pinned = { title: string; run: ShellRun }
+export type Pinned = { title: string; command: string; run: ShellRun }
 
 /** A title as the band shows it: everything there is in the background already. */
 function bandTitle(title: string): string {
@@ -497,17 +522,43 @@ function BandRow(els: Els, { title, run }: Pinned, columns: number): RenderEleme
   )
 }
 
+/** Rows a pinned card takes: two borders, header, command, output, meter, stats. */
+const PINNED_ROWS = 2 + 1 + 1 + BACKGROUND_LINES + 1 + 1
+
 /**
- * Background shells whose cards have scrolled out of view, one live row each,
- * so a long job stays visible while the agent keeps writing.
+ * Running background shells, pinned above the prompt while they run: a whole
+ * live card each while they fit in the band's rows, one live row each past that.
  */
-export function drawBand(els: Els, shells: readonly Pinned[], columns: number): RenderElement {
+export function drawPinned(els: Els, shells: readonly Pinned[], columns: number, maxRows: number): RenderElement {
   const { Box, Text } = els
-  const shown = shells.slice(0, BAND_ROWS)
-  const more = shells.length - shown.length
+  let budget = maxRows
+  const parts: RenderElement[] = []
+  let more = 0
+  for (const shell of shells) {
+    const rowsLeft = shells.length - parts.length
+    if (budget - PINNED_ROWS >= rowsLeft - 1) {
+      const card: Card = {
+        els,
+        title: shell.title,
+        command: shell.command,
+        run: shell.run,
+        columns,
+        isOpen: false,
+        toggle: undefined,
+        ownsOutput: true,
+      }
+      parts.push(BackgroundLive(card, shell.run.background?.taskId ?? ''))
+      budget -= PINNED_ROWS
+    } else if (budget > 1 || rowsLeft === 1) {
+      parts.push(BandRow(els, shell, columns))
+      budget -= 1
+    } else {
+      more += 1
+    }
+  }
   return (
     <Box flexDirection="column">
-      {shown.map(shell => BandRow(els, shell, columns))}
+      {parts}
       {more > 0 && <Text dimColor>{`  +${more} more in the background`}</Text>}
     </Box>
   )

@@ -11,6 +11,8 @@ export type ShellBackground = {
 export type ShellRun = {
   /** What the call was for: its description, else its command's first line. */
   title?: string
+  /** The command line it ran. */
+  command?: string
   /** When `tool.call` fired (includes any permission wait); 0 when unknown. */
   startedAt: number
   /** When its output file first appeared: the process really started. */
