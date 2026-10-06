@@ -2,11 +2,21 @@
 
 Live inline cards for every shell command Claude runs, right in the Claude Code transcript. No side panel.
 
+I got tired of my agent's shells being reduced to this:
+
 <p align="center">
-  <img src="assets/demo.gif" alt="shellcast: live shell cards in the Claude Code transcript" width="860">
+  <img src="assets/before.png" alt="Claude Code's footer: auto mode on · 1 shell, 2 monitors · 1 agent" width="560">
 </p>
 
-Every Bash call gets a card in the transcript itself, with no side panel. While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
+What is that shell doing? Is it stuck? Did the build pass? shellcast puts every shell command Claude runs right in the transcript as a live card. Same prompt, same project:
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Side by side: stock Claude Code collapses shells into 'Ran 3 shell commands'; with shellcast each one is a live card with output, progress bars and a one-line summary" width="100%">
+</p>
+
+<p align="center"><sub>Left: stock Claude Code. Right: with shellcast. <a href="assets/demo.mp4">Full-quality MP4</a>.</sub></p>
+
+While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
 
 ```
 ✔ Run the test suite  ⎿ Tests  73 passed (73)              5.3s · 13 lines  ▸ details
