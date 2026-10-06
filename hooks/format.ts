@@ -13,10 +13,25 @@ const CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g
  * The last `count` visible lines of raw terminal output: escapes stripped,
  * each line resolved to what a terminal shows after its last carriage return
  * (so `npm`/`curl` progress bars collapse to their latest frame).
+ *
+ * Only the end of the output is cleaned: a few lines more than asked for,
+ * widened while blank lines leave it short, and never past the last 16 KB.
  */
 export function tailLines(raw: string, count: number): string[] {
+  const floor = Math.max(0, raw.length - 16384)
+  let want = count + 4
+  for (;;) {
+    let start = raw.length
+    for (let seen = 0; seen < want && start > floor; seen++) start = raw.lastIndexOf('\n', start - 1)
+    start = Math.max(floor, start + 1)
+    const lines = visibleLines(raw.slice(start))
+    if (lines.length >= count || start === floor) return lines.slice(-count)
+    want *= 4
+  }
+}
+
+function visibleLines(raw: string): string[] {
   const text = raw
-    .slice(-16384)
     .replace(/\r\n/g, '\n')
     .replace(ANSI, '')
     .replace(CONTROL, '')
@@ -26,14 +41,14 @@ export function tailLines(raw: string, count: number): string[] {
     return (cut < 0 ? line : line.slice(cut + 1)).trimEnd()
   })
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-  return lines.slice(-count)
+  return lines
 }
 
 /** Newline count, plus one for an unterminated last line. */
 export function countLines(text: string): number {
   if (text.length === 0) return 0
   let count = 0
-  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) count++
+  for (let at = text.indexOf('\n'); at >= 0; at = text.indexOf('\n', at + 1)) count++
   return text.endsWith('\n') ? count : count + 1
 }
 

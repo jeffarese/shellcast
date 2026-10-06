@@ -342,7 +342,7 @@ function Compact(
   meta: string,
   lines: readonly string[],
   chips: readonly Chip[],
-  details: RenderElement | null,
+  details: (() => RenderElement) | null,
   metaColor?: string,
 ): RenderElement {
   const { Box, Text } = card.els
@@ -356,7 +356,7 @@ function Compact(
   return (
     <Box flexDirection="column">
       {Header(card, glyph, color, right, card.isOpen ? undefined : subtitle)}
-      {card.isOpen && <Box paddingLeft={2}>{details}</Box>}
+      {card.isOpen && details !== null && <Box paddingLeft={2}>{details()}</Box>}
     </Box>
   )
 }
@@ -416,7 +416,7 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
   if (props.isInterrupted) {
     const elapsed = elapsedOf(run)
     const meta = elapsed === undefined ? 'interrupted' : `interrupted after ${duration(elapsed)}`
-    return Compact(card, '⊘', 'warning', meta, run.tail.slice(-DONE_LINES), [], Details(card, undefined, undefined))
+    return Compact(card, '⊘', 'warning', meta, run.tail.slice(-DONE_LINES), [], () => Details(card, undefined, undefined))
   }
 
   if (props.isErrored) {
@@ -425,7 +425,7 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
     if (code !== undefined) return Failed(card, code, text)
     // Refused before it ran (the dialog, a rule, a hook): not a command failure.
     const reason = tailLines(text, 2)
-    return Compact(card, '⊘', 'warning', 'not run', reason, [], Details(card, undefined, text))
+    return Compact(card, '⊘', 'warning', 'not run', reason, [], () => Details(card, undefined, text))
   }
 
   if (props.output === undefined && run.endedAt === undefined) {
@@ -449,7 +449,7 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
       return Compact(card, run.ticks % 4 < 2 ? '◉' : '○', 'suggestion', meta, [], chips, null, 'suggestion')
     }
     if (status === undefined) {
-      return Compact(card, '◉', 'suggestion', `background · ${taskId}`, [], chips, Details(card, output, undefined))
+      return Compact(card, '◉', 'suggestion', `background · ${taskId}`, [], chips, () => Details(card, output, undefined))
     }
     const exit = run.background?.exitCode
     const isKilled = status === 'killed' || status === 'stopped'
@@ -458,7 +458,7 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
     const color = isKilled ? 'warning' : isOk ? 'success' : 'error'
     const word = isKilled ? 'stopped' : exit === undefined ? status : `exit ${exit}`
     const meta = metaOf(run, run.lines ?? run.tail.length, ['background', word])
-    return Compact(card, glyph, color, meta, run.tail.slice(-DONE_LINES), chips, Details(card, output, undefined))
+    return Compact(card, glyph, color, meta, run.tail.slice(-DONE_LINES), chips, () => Details(card, output, undefined))
   }
 
   const stdout = output?.stdout ?? ''
@@ -474,7 +474,7 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
     meta,
     shown.length > 0 ? shown : shownErr,
     chips,
-    Details(card, output, undefined),
+    () => Details(card, output, undefined),
   )
 }
 

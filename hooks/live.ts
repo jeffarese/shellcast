@@ -27,6 +27,7 @@ export type Io = {
   setRun: (id: string, change: (run: ShellRun) => ShellRun) => Promise<ShellRun>
   getActive: () => Promise<readonly string[]>
   setActive: (change: (ids: readonly string[]) => string[]) => Promise<readonly string[]>
+  setPinned: (change: (ids: readonly string[]) => string[]) => Promise<readonly string[]>
 }
 
 export const TICK_MS = 300
@@ -148,6 +149,7 @@ async function tick(io: Io) {
     const dir = await tasksDir(io).catch(() => undefined)
     let present: Set<string> | undefined
     const finished: string[] = []
+    let isUnpinning = false
     for (const id of ids) {
       const run = await io.getRun(id)
       if (run.startedAt === 0) {
@@ -168,7 +170,10 @@ async function tick(io: Io) {
       const isGone = seen === 'gone'
       const isOverdue = file === undefined && now - run.startedAt > run.timeoutMs + 60_000
       const isSettled = run.background !== undefined && run.background.status !== 'running'
-      if (isGone || isOverdue || isSettled) finished.push(id)
+      if (isGone || isOverdue || isSettled) {
+        finished.push(id)
+        isUnpinning ||= run.background !== undefined
+      }
       await io.setRun(id, current => ({
         ...current,
         ...(isGone ? {} : seen),
@@ -177,7 +182,10 @@ async function tick(io: Io) {
         ticks: current.ticks + 1,
       }))
     }
-    if (finished.length > 0) await io.setActive(list => list.filter(id => !finished.includes(id)))
+    if (finished.length > 0) {
+      await io.setActive(list => list.filter(id => !finished.includes(id)))
+      if (isUnpinning) await io.setPinned(list => list.filter(id => !finished.includes(id)))
+    }
   } catch (error) {
     io.log(`tick failed: ${String(error)}`)
   } finally {
@@ -231,6 +239,7 @@ export async function end(io: Io, id: string, taskId: string | undefined) {
     spawnedAt: run.spawnedAt ?? endedAt,
     background: { taskId, status: 'running' },
   }))
+  await io.setPinned(list => [...list.filter(other => other !== id), id])
   ensureTicker()
 }
 
@@ -255,6 +264,7 @@ export async function settle(io: Io, note: Notification) {
       },
     }))
     await io.setActive(list => list.filter(other => other !== id))
+    await io.setPinned(list => list.filter(other => other !== id))
   }
 }
 

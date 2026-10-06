@@ -40,6 +40,8 @@ declare module 'claude-code' {
       runs: StateFamily<ShellRun>
       expanded: StateFamily<boolean>
       active: string[]
+      /** The background shells still running: the band and footer read only these. */
+      pinned: string[]
     }
   }
 }

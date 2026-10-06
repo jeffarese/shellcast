@@ -6,6 +6,9 @@ test('tail lines strip escapes and keep only the last frame of a progress line',
   const raw = '\x1b[32mok\x1b[0m first\r\ndownloading 10%\rdownloading 55%\rdownloading 90%\n\n'
   expect(tailLines(raw, 5)).toEqual(['ok first', 'downloading 90%'])
   expect(tailLines('a\nb\nc\nd', 2)).toEqual(['c', 'd'])
+  // Blank lines past the first look widen it; a single line has no newline at all.
+  expect(tailLines('a\nb\nc' + '\n'.repeat(20), 2)).toEqual(['b', 'c'])
+  expect(tailLines('abc', 3)).toEqual(['abc'])
 })
 
 test('progress reads a percentage or a count from the newest lines only', () => {

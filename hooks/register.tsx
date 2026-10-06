@@ -9,13 +9,17 @@ import { BLANK, begin, connect, connected, end, ensureTicker, settle, textOf } f
 const runs = atom({ plugin: 'shellcast', key: 'runs' } as const, BLANK)
 const expanded = atom({ plugin: 'shellcast', key: 'expanded' } as const, false)
 const active = atom({ plugin: 'shellcast', key: 'active' } as const, [])
+const pinned = atom({ plugin: 'shellcast', key: 'pinned' } as const, [])
 
 type Reader = Parameters<typeof read>[0]
 
-/** Background shells still running, newest last. */
+/**
+ * Background shells still running, newest last. Reads only the pinned runs,
+ * so a foreground shell's ticks never redraw the band or the footer.
+ */
 async function backgroundShells($: Reader): Promise<(Pinned & { id: string })[]> {
   const shells: (Pinned & { id: string })[] = []
-  for (const id of await read($, active)) {
+  for (const id of await read($, pinned)) {
     const run = await read($, memberOf(runs, { requestId: id }))
     if (run.background?.status === 'running') shells.push({ id, title: run.title ?? 'Shell', command: run.command ?? '', run })
   }
@@ -42,8 +46,20 @@ export const register: Register = on => {
       setRun: (id, change) => update($, memberOf(runs, { requestId: id }), change),
       getActive: () => read($, active),
       setActive: change => update($, active, change),
+      setPinned: change => update($, pinned, change),
     })
-    if ((await read($, active)).length > 0) ensureTicker()
+    const ids = await read($, active)
+    if (ids.length > 0) {
+      // Runs pinned before `pinned` existed (a reload mid-shell) pin again.
+      const list = await read($, pinned)
+      const running: string[] = []
+      for (const id of ids) {
+        if ((await read($, memberOf(runs, { requestId: id }))).background?.status === 'running') running.push(id)
+      }
+      const missing = running.filter(id => !list.includes(id))
+      if (missing.length > 0) await update($, pinned, current => [...current, ...missing.filter(id => !current.includes(id))])
+      ensureTicker()
+    }
     return started
   })
 
