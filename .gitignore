@@ -1,0 +1,4 @@
+# Laid by Claude Code at each load for the editor; never committed.
+.claude-plugin/types/
+node_modules/
+.DS_Store

@@ -1,0 +1,11 @@
+{
+  "name": "shellcast",
+  "owner": { "name": "Jeff Arese" },
+  "plugins": [
+    {
+      "name": "shellcast",
+      "source": "./",
+      "description": "Live inline cards for every shell command Claude runs: streaming output, progress bars, timing and exit status right in the transcript."
+    }
+  ]
+}

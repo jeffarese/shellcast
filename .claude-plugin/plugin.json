@@ -1,0 +1,10 @@
+{
+  "name": "shellcast",
+  "version": "0.1.0",
+  "description": "Live inline cards for every shell command Claude runs: streaming output, progress bars, timing and exit status right in the transcript.",
+  "author": { "name": "Jeff Arese" },
+  "homepage": "https://github.com/jeffarese/shellcast",
+  "repository": "https://github.com/jeffarese/shellcast",
+  "keywords": ["bash", "shell", "terminal", "tui", "progress", "mod"],
+  "types": "./types/index.d.ts"
+}
