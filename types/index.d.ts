@@ -9,6 +9,8 @@ export type ShellBackground = {
 
 /** What the mod observed of one Bash call, keyed by its tool_use_id. */
 export type ShellRun = {
+  /** What the call was for: its description, else its command's first line. */
+  title?: string
   /** When `tool.call` fired (includes any permission wait); 0 when unknown. */
   startedAt: number
   /** When its output file first appeared: the process really started. */

@@ -197,11 +197,11 @@ function stopTicker() {
 }
 
 /** A shell call is about to run: remember which output files already exist. */
-export async function begin(io: Io, id: string, timeoutMs: number | undefined) {
+export async function begin(io: Io, id: string, timeoutMs: number | undefined, title: string) {
   const startedAt = await io.now()
   const dir = await tasksDir(io).catch(() => undefined)
   baselines.set(id, dir === undefined ? new Set() : await outputsIn(io, dir))
-  await io.setRun(id, () => ({ ...BLANK, startedAt, now: startedAt, timeoutMs: timeoutMs ?? DEFAULT_TIMEOUT_MS }))
+  await io.setRun(id, () => ({ ...BLANK, title, startedAt, now: startedAt, timeoutMs: timeoutMs ?? DEFAULT_TIMEOUT_MS }))
   await io.setActive(list => [...list.filter(other => other !== id), id])
   ensureTicker()
 }

@@ -8,7 +8,7 @@ I got tired of my agent's shells being reduced to this:
   <img src="assets/before.png" alt="Claude Code's footer: auto mode on · 1 shell, 2 monitors · 1 agent" width="560">
 </p>
 
-What is that shell doing? Is it stuck? Did the build pass? shellcast puts every shell command Claude runs right in the transcript as a live card. Same prompt, same project:
+What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Same prompt, same project:
 
 <p align="center">
   <img src="assets/demo.gif" alt="Side by side: stock Claude Code collapses shells into 'Ran 3 shell commands'; with shellcast each one is a live card with output, progress bars and a one-line summary" width="100%">
@@ -43,6 +43,7 @@ Answer `y` to add the marketplace, then pick a scope (user scope loads it in eve
 | **Done** | A one-liner: `✔`, the description, the last line of output (the command, on the main screen), duration and line count. Chips appear for git commits, pushes and PRs, edited files, saved output, unsandboxed runs and timeouts. |
 | **Failed** | The same one-liner in red, with `✘` and the exit code. A call you declined shows as `⊘ not run`, not as a failure. |
 | **Background** | Dashed card that keeps streaming until the task's completion notice says how it ended (`✔ exit 0`, `✘ exit 1`, `■ stopped`). |
+| **Pinned** | Once a background shell's card scrolls out of view, it gets a live row above the prompt (title, progress, last line, elapsed time), and the footer's `1 shell` reads `→ Run e2e suite 12/24 26s`. |
 | **Details** | In the fullscreen layout, `▸ details` on any card opens the full command, stdout and stderr, timing, task id and output file. |
 
 On the terminal's main screen (not fullscreen), finished rows keep Claude Code's own `⎿` result block, so ctrl+o still expands the output. The desktop app, VS Code and mobile keep their native rows. Shells that Claude Code would fold into "ran N shell commands" are unfolded so each gets its card.

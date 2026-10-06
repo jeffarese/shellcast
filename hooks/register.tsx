@@ -1,14 +1,33 @@
 import { atom, memberOf, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { drawCard } from './card'
-import type { BashInput, BashOutput, Card } from './card'
+import { drawBand, drawCard, footerTail } from './card'
+import type { BashInput, BashOutput, Card, Pinned } from './card'
 import { parseNotifications } from './format'
 import { BLANK, begin, connect, connected, end, ensureTicker, settle, textOf } from './live'
 
 const runs = atom({ plugin: 'shellcast', key: 'runs' } as const, BLANK)
 const expanded = atom({ plugin: 'shellcast', key: 'expanded' } as const, false)
 const active = atom({ plugin: 'shellcast', key: 'active' } as const, [])
+
+/**
+ * Whether each call's card is in the viewport, as its last draw reported. Only
+ * drawing learns this and drawing never writes state; the band reads it when
+ * the ticker redraws it, which is often enough for a row that scrolled away.
+ */
+const inView = new Map<string, boolean>()
+
+type Reader = Parameters<typeof read>[0]
+
+/** Background shells still running, newest last. */
+async function backgroundShells($: Reader): Promise<(Pinned & { id: string })[]> {
+  const shells: (Pinned & { id: string })[] = []
+  for (const id of await read($, active)) {
+    const run = await read($, memberOf(runs, { requestId: id }))
+    if (run.background?.status === 'running') shells.push({ id, title: run.title ?? 'Shell', run })
+  }
+  return shells
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -40,7 +59,8 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const io = connected()
     if (io === undefined) return next(e)
-    await begin(io, e.tool_use_id, e.timeout)
+    const title = e.description?.trim() || e.command.split('\n')[0]?.trim() || 'Shell'
+    await begin(io, e.tool_use_id, e.timeout, title)
     const ran = await next(e)
     const output = ran.deny === undefined && ran.isError !== true ? (ran.result as BashOutput) : undefined
     await end(io, e.tool_use_id, output?.backgroundTaskId)
@@ -71,6 +91,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'ToolUse', props: { tool: 'Bash' } }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
+    if (e.props.onScreen !== undefined) inView.set(e.props.tool_use_id, e.props.onScreen !== null)
     const input = (typeof e.props.input === 'object' && e.props.input !== null ? e.props.input : {}) as BashInput
     const command = input.command ?? ''
     const ownsOutput = e.viewport?.isFullscreen === true
@@ -100,5 +121,27 @@ export const register: Register = on => {
     const hasShell = e.props.calls.some(call => call.tool === 'Bash')
     if (e.surface !== 'terminal' || !hasShell || e.props.isExpanded) return next(e)
     return next({ ...e, props: { ...e.props, isExpanded: true } })
+  })
+
+  // A background shell keeps a live row above the prompt once its card has
+  // scrolled away, and the footer's "1 shell" says what it is doing.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    const hidden = (await backgroundShells($)).filter(shell => inView.get(shell.id) !== true)
+    if (hidden.length === 0) return next(e)
+    const { Box } = $.ui.resolve(e)
+    const below = await next(e)
+    return (
+      <Box flexDirection="column">
+        {drawBand($.ui.resolve(e), hidden, e.props.bodyColumns)}
+        {below}
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.tail !== undefined) return next(e)
+    const tail = footerTail(await backgroundShells($))
+    return next(tail === undefined ? e : { ...e, props: { ...e.props, tail } })
   })
 }

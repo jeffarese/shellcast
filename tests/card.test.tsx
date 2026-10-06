@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 const PLUGIN = 'shellcast'
 const VIEWPORT = { columns: 100, rows: 40, isFullscreen: true }
@@ -193,4 +194,63 @@ test('a call the agent ran is timed and drawn from what the mod observed', async
     }),
   })
   expect(await ui.find({ type: 'Text', text: '0.0s · 1 line' })).toBeDefined()
+})
+
+async function startBackground(...[$, on]: Parameters<TestBody>) {
+  mock.clock(on, { now: 1_000 })
+  on('session.start', () => ({ cwd: '/work' }))
+  let id = ''
+  on('tool.call', { tool: 'Bash' }, (_, e) => {
+    id = e.tool_use_id
+    return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b42' } }
+  })
+  // What the engine draws beneath the plugin: an empty band, the hint as given.
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>{`${e.props.hint}${e.props.tail === undefined ? '' : ` ${e.props.tail}`}`}</Text>
+  })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: './scripts/e2e.sh', description: 'Run the e2e suite', run_in_background: true })
+  return id
+}
+
+const BAND = { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 90, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+
+test('a background shell scrolled out of view stays pinned above the prompt', async ($, on) => {
+  const id = await startBackground($, on)
+  const card = await $.ui.mount({
+    plugin: PLUGIN,
+    surface: 'terminal',
+    component: 'ToolUse',
+    requestId: id,
+    viewport: VIEWPORT,
+    props: call({ tool_use_id: id, onScreen: null, output: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b42' } }),
+  })
+  expect(await card.find({ type: 'Text', text: 'background' })).toBeDefined()
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
+  expect(await band.find({ type: 'Text', text: 'Run the e2e suite' })).toBeDefined()
+})
+
+test('the band stays out of the way while the card itself is on screen', async ($, on) => {
+  const id = await startBackground($, on)
+  await $.ui.mount({
+    plugin: PLUGIN,
+    surface: 'terminal',
+    component: 'ToolUse',
+    requestId: id,
+    viewport: VIEWPORT,
+    props: call({ tool_use_id: id, onScreen: { first: 0, last: 5, of: 6 }, output: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b42' } }),
+  })
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
+  expect(await band.find({ type: 'Text', text: 'Run the e2e suite' })).toBeUndefined()
+})
+
+test("the footer's shell count says what the shell is doing", async ($, on) => {
+  await startBackground($, on)
+  const hint = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'PromptHint', viewport: VIEWPORT, props: { hint: '1 shell', isDraft: false, isWorking: true } })
+  expect(await hint.find({ type: 'Text', text: /^1 shell → Run the e2e suite/ })).toBeDefined()
 })

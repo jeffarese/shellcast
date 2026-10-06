@@ -450,3 +450,78 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
     Details(card, output, undefined),
   )
 }
+
+/** Background shells pinned above the prompt, at most this many rows. */
+const BAND_ROWS = 3
+const BAND_METER = 14
+
+/** A running background shell, for the band and the footer. */
+export type Pinned = { title: string; run: ShellRun }
+
+/** A title as the band shows it: everything there is in the background already. */
+function bandTitle(title: string): string {
+  return title.replace(/\s+in (?:the )?background$/i, '')
+}
+
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text
+}
+
+function BandRow(els: Els, { title, run }: Pinned, columns: number): RenderElement {
+  const { Box, Text } = els
+  const pulse = run.ticks % 4 < 2 ? '◉' : '○'
+  const elapsed = elapsedOf(run)
+  const progress = detectProgress(run.tail)
+  const last = run.tail[run.tail.length - 1]?.trim()
+  const meter = progress !== undefined ? bar(progress.ratio, BAND_METER) : undefined
+  const glow = progress === undefined ? shimmer(run.ticks, BAND_METER) : undefined
+  return (
+    <Box>
+      <Box flexShrink={0}>
+        <Text color="suggestion" bold>{`${pulse} `}</Text>
+        <Text bold>{`${clip(bandTitle(title), Math.max(12, Math.floor(columns / 3)))}  `}</Text>
+        {meter !== undefined && <Text color="success">{meter.filled}</Text>}
+        {meter !== undefined && <Text color="inactive">{meter.empty}</Text>}
+        {glow !== undefined && <Text color="inactive">{glow.before}</Text>}
+        {glow !== undefined && <Text color="suggestion">{glow.lit}</Text>}
+        {glow !== undefined && <Text color="inactive">{glow.after}</Text>}
+        {progress !== undefined && <Text bold>{` ${progress.label}`}</Text>}
+      </Box>
+      <Box flexGrow={1} flexShrink={1}>
+        <Text dimColor wrap="truncate-end">{`  ${last ?? 'waiting for output…'}`}</Text>
+      </Box>
+      <Box flexShrink={0}>
+        <Text dimColor>{elapsed === undefined ? '' : `  ${duration(elapsed)}`}</Text>
+      </Box>
+    </Box>
+  )
+}
+
+/**
+ * Background shells whose cards have scrolled out of view, one live row each,
+ * so a long job stays visible while the agent keeps writing.
+ */
+export function drawBand(els: Els, shells: readonly Pinned[], columns: number): RenderElement {
+  const { Box, Text } = els
+  const shown = shells.slice(0, BAND_ROWS)
+  const more = shells.length - shown.length
+  return (
+    <Box flexDirection="column">
+      {shown.map(shell => BandRow(els, shell, columns))}
+      {more > 0 && <Text dimColor>{`  +${more} more in the background`}</Text>}
+    </Box>
+  )
+}
+
+/** What the footer's "1 shell" is doing, in a few words: `→ Run e2e 12/24 24s`. */
+export function footerTail(shells: readonly Pinned[]): string | undefined {
+  if (shells.length === 0) return undefined
+  const parts = shells.map(({ title, run }) => {
+    const progress = detectProgress(run.tail)
+    const elapsed = elapsedOf(run)
+    return [clip(bandTitle(title), 22), progress?.label, elapsed === undefined ? undefined : duration(elapsed)]
+      .filter(part => part !== undefined)
+      .join(' ')
+  })
+  return `→ ${parts.join(' · ')}`
+}
