@@ -24,6 +24,34 @@ const TOOL_COMMAND: Record<string, string> = {
   WebFetch: 'curl', WebSearch: 'rg',
 }
 
+const GROUP_ACTIONS: readonly { tools: readonly string[]; verb: string; noun: string; plural?: string }[] = [
+  { tools: ['Grep', 'Glob'], verb: 'searched for', noun: 'pattern' },
+  { tools: ['Read'], verb: 'read', noun: 'file' },
+  { tools: ['LS'], verb: 'listed', noun: 'directory', plural: 'directories' },
+  { tools: ['Write'], verb: 'wrote', noun: 'file' },
+  { tools: ['Edit', 'MultiEdit'], verb: 'edited', noun: 'file' },
+  { tools: ['WebSearch'], verb: 'ran', noun: 'web search', plural: 'web searches' },
+  { tools: ['WebFetch'], verb: 'fetched', noun: 'page' },
+  { tools: ['Bash'], verb: 'ran', noun: 'shell command' },
+]
+
+/** Describe actual tool calls; shell commands keep their icons without being reclassified as native reads/searches. */
+export function groupSummary(calls: Group['calls']): string {
+  const counts = new Map<string, number>()
+  for (const call of calls) counts.set(call.tool, (counts.get(call.tool) ?? 0) + 1)
+  const parts: string[] = []
+  let remaining = calls.length
+  for (const { tools, verb, noun, plural = `${noun}s` } of GROUP_ACTIONS) {
+    const count = tools.reduce((sum, tool) => sum + (counts.get(tool) ?? 0), 0)
+    if (count === 0) continue
+    parts.push(`${verb} ${count} ${count === 1 ? noun : plural}`)
+    remaining -= count
+  }
+  if (remaining > 0) parts.push(`used ${remaining} ${parts.length > 0 ? 'other ' : ''}${remaining === 1 ? 'tool' : 'tools'}`)
+  const summary = parts.join(', ')
+  return summary.charAt(0).toUpperCase() + summary.slice(1)
+}
+
 /** A live, failed, interrupted, pending, or staged result stays inspectable. */
 export function canCollapseGroup(calls: readonly ToolGroupCall[], runs: Group['runs']): boolean {
   return calls.length > 1 && calls.every((call, index) => {
@@ -72,15 +100,14 @@ export function groupDuration(calls: Group['calls'], runs: Group['runs']): numbe
 export function drawGroup(group: Group): RenderElement {
   const { Box, Text, Button } = group.els
   const { calls, columns, isOpen, toggle } = group
-  const noun = calls.every(call => call.tool === 'Bash') ? 'commands' : 'tools'
   const icons = groupIcons(calls, group.iconMode)
   const elapsed = columns >= 72 ? groupDuration(calls, group.runs) : undefined
   return (
     <Box>
       <Box flexShrink={0}><Text color="success" bold>{'✔ '}</Text></Box>
       <Box flexGrow={1} flexShrink={1}>
-        <Text wrap="truncate-end">
-          <Text bold>{`${calls.length} ${noun}`}</Text>
+        <Text wrap="wrap">
+          <Text bold>{groupSummary(calls)}</Text>
           {icons !== '' && <Text dimColor>{`  ${icons}`}</Text>}
         </Text>
       </Box>

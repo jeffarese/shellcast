@@ -2,7 +2,7 @@ import type { ToolGroupCall } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { canCollapseGroup, groupDuration, groupIcons } from '../hooks/group'
+import { canCollapseGroup, groupDuration, groupIcons, groupSummary } from '../hooks/group'
 import { BLANK } from '../hooks/live'
 
 const VIEWPORT = { columns: 100, rows: 40, isFullscreen: true }
@@ -20,11 +20,11 @@ function native(on: Parameters<TestBody>[1]) {
   })
 }
 
-test('finished blocks collapse to a count and deduplicated command icons', async ($, on) => {
+test('finished blocks describe the work and keep deduplicated command icons', async ($, on) => {
   mock.env(on, {})
   native(on)
   const ui = await $.ui.mount({ plugin: 'shellcast', surface: 'terminal', component: 'ToolGroup', viewport: VIEWPORT, props: PROPS })
-  expect(await ui.find({ type: 'Text', text: '4 commands' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Ran 4 shell commands' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '  ▤×2  ⌕  ⚗' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '✔ ' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /expanded|native/ })).toBeUndefined()
@@ -52,7 +52,7 @@ test('live blocks keep their rows until the block finishes', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'shellcast', surface: 'terminal', component: 'ToolGroup', viewport: VIEWPORT, props: { ...PROPS, isActive: true } })
   expect(await ui.find({ type: 'Text', text: 'expanded 4 rows' })).toBeDefined()
   await ui.redraw(PROPS)
-  expect(await ui.find({ type: 'Text', text: '4 commands' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Ran 4 shell commands' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'expanded 4 rows' })).toBeUndefined()
 })
 
@@ -79,7 +79,7 @@ test('explicit expansion and other surfaces retain the native group', async ($, 
 test('main-screen groups use ctrl+o, while narrow fullscreen groups keep a small disclosure', async ($, on) => {
   mock.env(on, { SHELLCAST_ICONS: 'none' })
   const main = await $.ui.mount({ plugin: 'shellcast', surface: 'terminal', component: 'ToolGroup', viewport: { ...VIEWPORT, isFullscreen: false }, props: PROPS })
-  expect(await main.find({ type: 'Text', text: '4 commands' })).toBeDefined()
+  expect(await main.find({ type: 'Text', text: 'Ran 4 shell commands' })).toBeDefined()
   expect(await main.find({ type: 'Text', text: /ctrl\+o/ })).toBeDefined()
   expect(await main.find({ type: 'Button' })).toBeUndefined()
   expect(await main.find({ type: 'Text', text: /▤/ })).toBeUndefined()
@@ -91,11 +91,23 @@ test('mixed and native-only tool groups retain recognizable icons in every mode'
   mock.env(on, { SHELLCAST_ICONS: 'nerd-bold' })
   const calls = [call('', { tool: 'Read', input: { file_path: 'a.ts' } }), call('', { tool: 'Grep', input: { pattern: 'TODO' } }), call('npm test')]
   const ui = await $.ui.mount({ plugin: 'shellcast', surface: 'terminal', component: 'ToolGroup', viewport: VIEWPORT, props: { ...PROPS, calls } })
-  expect(await ui.find({ type: 'Text', text: '3 tools' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Searched for 1 pattern, read 1 file, ran 1 shell command' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '  \uf0f6  \uf002  \uf0c3' })).toBeDefined()
   expect(groupIcons(calls.slice(0, 2), 'unicode')).toBe('▤  ⌕')
   expect(groupIcons(calls, 'nerd')).toBe('\uea7b  \uea6d  \uea79')
   expect(groupIcons(calls, 'none')).toBe('')
+})
+
+test('summaries count native tools separately from shell commands and use singular/plural descriptions', () => {
+  const tool = (name: string) => call('', { tool: name })
+  expect(groupSummary([tool('Read'), ...Array.from({ length: 7 }, () => call('rg TODO src')), tool('Grep')]))
+    .toBe('Searched for 1 pattern, read 1 file, ran 7 shell commands')
+  expect(groupSummary([tool('Grep'), tool('Glob'), tool('Read'), tool('Read'), tool('LS'), tool('LS')]))
+    .toBe('Searched for 2 patterns, read 2 files, listed 2 directories')
+  expect(groupSummary([tool('Write'), tool('Edit'), tool('MultiEdit'), tool('WebSearch'), tool('WebSearch'), tool('WebFetch')]))
+    .toBe('Wrote 1 file, edited 2 files, ran 2 web searches, fetched 1 page')
+  expect(groupSummary([tool('Read'), tool('mcp__docs__lookup')])).toBe('Read 1 file, used 1 other tool')
+  expect(groupSummary([tool('mcp__docs__lookup'), tool('mcp__docs__lookup')])).toBe('Used 2 tools')
 })
 
 test('background jobs only collapse after successful completion is observed', () => {
