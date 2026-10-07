@@ -8,14 +8,14 @@ I got tired of my agent's shells being reduced to this:
   <img src="assets/before.png" alt="Claude Code's footer: auto mode on · 1 shell, 2 monitors · 1 agent" width="560">
 </p>
 
-What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Quick commands stay as one-line rows with their own icons. After a few commands and file writes, the whole sequence is still easy to scan:
+What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Quick commands stay as one-line rows with their own icons. Completed tool blocks collapse into a count and an icon strip, keeping the whole sequence easy to scan:
 
 <p align="center">
   <strong>With shellcast</strong><br>
-  <a href="assets/after.mp4"><img src="assets/after.gif" alt="Quick commands keep their one-line icon rows, three writes stay compact, and a longer production build opens a live progress card before folding back into one line" width="100%"></a>
+  <a href="assets/after.mp4"><img src="assets/after.gif" alt="Quick commands show their icons before collapsing into a compact block, three writes stay compact, and a longer production build opens a live progress card before its block folds down" width="100%"></a>
 </p>
 
-<p align="center"><sub>Eleven command rows, three compact Write summaries, and one longer build that opens a live card and folds back down. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>. Watch the <a href="assets/after.mp4">shellcast MP4</a> or the <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
+<p align="center"><sub>Eleven commands collapse into two blocks with their icons intact, alongside three compact Write summaries. One longer build opens a live card before its block folds down. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>. Watch the <a href="assets/after.mp4">shellcast MP4</a> or the <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
 
 <p align="center">
   <strong>Stock Claude Code — the same run</strong><br>
@@ -49,11 +49,12 @@ Answer `y` to add the marketplace, then pick a scope (user scope loads it in eve
 | **Starting** | A quiet one-line row with a spinner. Commands that finish within about 1.5 s never open a card, so quick `ls` and `git status` calls don't flash. |
 | **Running** | Framed card: spinner, elapsed time, syntax-highlighted command, the last 3 output lines as they stream (always 3 rows, so it doesn't grow as output arrives), and a meter below them. The meter is a real progress bar when the output prints `45%` or `[3/10]`, and a shimmer otherwise. Under it: bytes, lines, a throughput sparkline, and a timeout warning past half the limit. |
 | **Done** | A one-liner: `✔`, the description, the last line of output (the command, on the main screen), duration and line count. Chips appear for git commits, pushes and PRs, edited files, saved output, unsandboxed runs and timeouts. |
+| **Completed block** | Consecutive successful tools collapse into one row: `✔ 4 commands  ▤×2  ⌕  ⚗`, with elapsed time when observed. Repeated icons get a count. In fullscreen, `▸ details` restores the individual rows; each shell still has its own output toggle. Active blocks, failures, interruptions and pending results stay visible. |
 | **Failed** | The same one-liner in red, with `✘` and the exit code. A call you declined shows as `⊘ not run`, not as a failure. |
 | **Background** | The live card is pinned above the prompt for as long as the shell runs, so it never scrolls away while the agent keeps writing: command, last 3 lines, a progress bar when the output reports one, and stats. It has a fixed height, so nothing jumps; the prompt only moves when a background shell starts or ends. In the transcript the call stays a single `◉ … pinned ↓` row until the completion notice turns it into `✔ exit 0`, `✘ exit 1` or `■ stopped`. With more shells than room, the extra ones get one live row each. The footer's `1 shell` also says what it is doing (`→ Run e2e suite 12/24 26s`), which stays visible if you collapse the pinned card with `[-]`. |
 | **Details** | In the fullscreen layout, `▸ details` on any card opens the full command, stdout and stderr, timing, task id and output file. |
 
-On the terminal's main screen (not fullscreen), finished rows keep Claude Code's own `⎿` result block, so ctrl+o still expands the output. The desktop app, VS Code and mobile keep their native rows. Shells that Claude Code would fold into "ran N shell commands" are unfolded so each gets its card.
+On the terminal's main screen (not fullscreen), individual rows keep Claude Code's own `⎿` result block, and collapsed groups show a ctrl+o hint. Claude Code's expanded transcript and verbose mode retain every individual row. The desktop app, VS Code and mobile keep their native rows.
 
 Successful `Write` calls in the terminal keep just the `Write(path)` header and `Wrote N lines to path` summary, without the source preview. Errors and writes awaiting owner review keep their native results.
 
@@ -94,4 +95,4 @@ claude plugin test .                     # tests/*.test.ts(x)
 
 The demos are real Claude Code sessions in a throwaway sample project, recorded with a scripted stand-in for the model and simulated test/build output so both runs follow the same sequence. The file writes and shellcast rendering run normally.
 
-Layout: `hooks/register.tsx` (the hooks), `hooks/card.tsx` (drawing), `hooks/icons.ts` (command icons), `hooks/live.ts` (output tracking), `hooks/format.ts` (pure helpers), `types/index.d.ts` (the `$.state` contract).
+Layout: `hooks/register.tsx` (the hooks), `hooks/card.tsx` (cards), `hooks/group.tsx` (collapsed tool blocks), `hooks/icons.ts` (command icons), `hooks/live.ts` (output tracking), `hooks/format.ts` (pure helpers), `types/index.d.ts` (the `$.state` contract).

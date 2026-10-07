@@ -39,6 +39,8 @@ declare module 'claude-code' {
     'shellcast': {
       runs: StateFamily<ShellRun>
       expanded: StateFamily<boolean>
+      /** Per-tool-block disclosure, separate from each shell's output details. */
+      groupExpanded: StateFamily<boolean>
       active: string[]
       /** The background shells still running: the band and footer read only these. */
       pinned: string[]

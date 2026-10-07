@@ -4,11 +4,13 @@ import type { BuiltinToolResults, Register } from 'claude-code'
 import { drawCard, drawPinned, footerTail } from './card'
 import type { BashInput, BashOutput, Card, Pinned } from './card'
 import { countLines, parseNotifications } from './format'
+import { canCollapseGroup, drawGroup } from './group'
 import { iconMode } from './icons'
 import { BLANK, begin, connect, connected, end, ensureTicker, settle, textOf } from './live'
 
 const runs = atom({ plugin: 'shellcast', key: 'runs' } as const, BLANK)
 const expanded = atom({ plugin: 'shellcast', key: 'expanded' } as const, false)
+const groupExpanded = atom({ plugin: 'shellcast', key: 'groupExpanded' } as const, false)
 const active = atom({ plugin: 'shellcast', key: 'active' } as const, [])
 const pinned = atom({ plugin: 'shellcast', key: 'pinned' } as const, [])
 
@@ -138,11 +140,30 @@ export const register: Register = on => {
     return <Box paddingLeft={2}><Text>{`⎿  Wrote ${lines} ${lines === 1 ? 'line' : 'lines'} to ${path}`}</Text></Box>
   })
 
-  // Shells folded into "ran 3 shell commands" would hide their cards.
-  on('ui.render', { component: 'ToolGroup' }, ($, e, next) => {
+  // Keep live blocks open; finished ones become a single row of command icons.
+  // The engine's own expanded mode (ctrl+o/verbose) always takes precedence.
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.isExpanded) return next(e)
     const hasShell = e.props.calls.some(call => call.tool === 'Bash')
-    if (e.surface !== 'terminal' || !hasShell || e.props.isExpanded) return next(e)
-    return next({ ...e, props: { ...e.props, isExpanded: true } })
+    const unfold = () => next({ ...e, props: { ...e.props, isExpanded: true } })
+    if (e.props.isActive || e.props.calls.length < 2) return hasShell ? unfold() : next(e)
+    const observed = await Promise.all(e.props.calls.map(call => call.tool === 'Bash' && call.tool_use_id !== undefined
+      ? read($, memberOf(runs, { requestId: call.tool_use_id })) : undefined))
+    if (!canCollapseGroup(e.props.calls, observed)) return unfold()
+    const state = memberOf(groupExpanded, e)
+    const interactive = e.viewport?.isFullscreen === true
+    const isOpen = interactive && await read($, state)
+    const els = $.ui.resolve(e)
+    const summary = drawGroup({
+      els, calls: e.props.calls, runs: observed,
+      iconMode: iconMode(await $.env.get('SHELLCAST_ICONS')),
+      columns: e.viewport?.columns ?? 100,
+      isOpen,
+      toggle: interactive ? () => update($, state, open => !open) : undefined,
+    })
+    if (!isOpen) return summary
+    const { Box } = els
+    return <Box flexDirection="column">{summary}{await unfold()}</Box>
   })
 
   // A background shell's live card stays pinned above the prompt while it
