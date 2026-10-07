@@ -11,12 +11,18 @@ I got tired of my agent's shells being reduced to this:
 What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Quick commands stay as one-line rows with their own icons. After a few commands and file writes, the whole sequence is still easy to scan:
 
 <p align="center">
-  <a href="assets/after.mp4"><img src="assets/after.gif" alt="Eleven one-line shell results with list, read, search, create, copy, move, edit, delete, Git, test, and build icons, alongside three compact Write summaries" width="100%"></a>
+  <strong>With shellcast</strong><br>
+  <a href="assets/after.mp4"><img src="assets/after.gif" alt="Quick commands keep their one-line icon rows, three writes stay compact, and a longer production build opens a live progress card before folding back into one line" width="100%"></a>
 </p>
 
-<p align="center"><sub>Eleven command rows, three compact Write summaries. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>. Watch the <a href="assets/after.mp4">shellcast MP4</a> or the <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
+<p align="center"><sub>Eleven command rows, three compact Write summaries, and one longer build that opens a live card and folds back down. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>. Watch the <a href="assets/after.mp4">shellcast MP4</a> or the <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
 
-<p align="center"><sub>Compare the <a href="assets/before.gif">stock Claude Code recording</a> or watch the <a href="assets/side-by-side.mp4">side-by-side MP4</a>. Both sessions replay the same scripted agent and fixture checks.</sub></p>
+<p align="center">
+  <strong>Stock Claude Code — the same run</strong><br>
+  <a href="assets/before.mp4"><img src="assets/before.gif" alt="The identical workflow in stock Claude Code: shell commands fold into groups, each Write fills the transcript with source previews, and the longer build uses the native Bash output" width="100%"></a>
+</p>
+
+<p align="center"><sub>The same prompt, commands, file contents, and eight-second build, with synchronized scripted replies. Watch the <a href="assets/before.mp4">before MP4</a> or the <a href="assets/side-by-side.mp4">side-by-side comparison</a>.</sub></p>
 
 While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
 
