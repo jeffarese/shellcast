@@ -21,11 +21,14 @@ export function tailLines(raw: string, count: number): string[] {
   const floor = Math.max(0, raw.length - 16384)
   let want = count + 4
   for (;;) {
-    let start = raw.length
-    for (let seen = 0; seen < want && start > floor; seen++) start = raw.lastIndexOf('\n', start - 1)
-    start = Math.max(floor, start + 1)
-    const lines = visibleLines(raw.slice(start))
-    if (lines.length >= count || start === floor) return lines.slice(-count)
+    let at = raw.length
+    for (let seen = 0; seen < want && at > floor; seen++) at = raw.lastIndexOf('\n', at - 1)
+    // `at` at or below the floor means the whole window was scanned. Testing
+    // `at`, not the slice start, matters: a newline exactly at the floor once
+    // left the start one past it, and this loop never ended.
+    const isWhole = at <= floor
+    const lines = visibleLines(raw.slice(isWhole ? floor : at + 1))
+    if (lines.length >= count || isWhole) return lines.slice(-count)
     want *= 4
   }
 }

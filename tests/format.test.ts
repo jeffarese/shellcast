@@ -9,6 +9,9 @@ test('tail lines strip escapes and keep only the last frame of a progress line',
   // Blank lines past the first look widen it; a single line has no newline at all.
   expect(tailLines('a\nb\nc' + '\n'.repeat(20), 2)).toEqual(['b', 'c'])
   expect(tailLines('abc', 3)).toEqual(['abc'])
+  // Fewer lines than asked, with a newline right at the scan floor: once looped forever.
+  expect(tailLines('\nonly', 40)).toEqual(['', 'only'])
+  expect(tailLines('x'.repeat(10) + '\n' + 'yy\n'.repeat(5461), 9000)).toHaveLength(5462)
 })
 
 test('progress reads a percentage or a count from the newest lines only', () => {
