@@ -64,6 +64,7 @@ const card = (change: Partial<Card> = {}): Card => ({
   els,
   title: 'Run the test suite',
   command: 'npm test -- --run\n  --reporter=verbose',
+  iconMode: 'nerd-bold',
   run: run({ endedAt: 9_000 }),
   columns: 120,
   isOpen: false,
@@ -90,6 +91,7 @@ const shells: Pinned[] = ['Run e2e suite', 'Watch build', 'Tail server log'].map
 const toggle = () => undefined
 
 const SCENARIOS = {
+  'done · icons off': () => drawCard(card({ iconMode: 'none' }), props({ output: done })),
   'done · main screen': () => drawCard(card(), props({ output: done })),
   'done · fullscreen': () => drawCard(card({ ownsOutput: true, toggle }), props({ output: done })),
   'done · fullscreen, open': () => drawCard(card({ ownsOutput: true, toggle, isOpen: true }), props({ output: done })),
@@ -98,20 +100,23 @@ const SCENARIOS = {
   'running · live card': () => drawCard(card({ run: run(), ownsOutput: true, toggle }), props({ isRunning: true })),
   'background · transcript row': () =>
     drawCard(card({ run: run({ background: { taskId: 'b1', status: 'running' } }) }), props({ output: { backgroundTaskId: 'b1' } })),
-  'band · 3 pinned shells': () => drawPinned(els, shells, 120, 40),
+  'band · icons off': () => drawPinned(els, shells, 120, 40, 'none'),
+  'band · 3 pinned shells': () => drawPinned(els, shells, 120, 40, 'nerd-bold'),
   'footer · 3 shells': () => footerTail(shells),
 }
 
 /** Elements built per draw, today: a draw that builds more has regressed. */
 const BUDGET: Record<keyof typeof SCENARIOS, number> = {
-  'done · main screen': 10,
-  'done · fullscreen': 12,
-  'done · fullscreen, open': 156,
-  'failed · fullscreen': 12,
-  'interrupted · main screen': 10,
-  'running · live card': 32,
-  'background · transcript row': 10,
-  'band · 3 pinned shells': 94,
+  'done · icons off': 10,
+  'done · main screen': 11,
+  'done · fullscreen': 13,
+  'done · fullscreen, open': 157,
+  'failed · fullscreen': 13,
+  'interrupted · main screen': 11,
+  'running · live card': 33,
+  'background · transcript row': 11,
+  'band · icons off': 94,
+  'band · 3 pinned shells': 97,
   'footer · 3 shells': 0,
 }
 

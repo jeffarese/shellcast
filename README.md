@@ -30,9 +30,9 @@ What is that shell doing? Is it stuck? How far along is it? shellcast puts every
 While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
 
 ```
-✔ Run the test suite  ⎿ Tests  73 passed (73)              5.3s · 13 lines  ▸ details
-✔ Production build  ⎿ ✓ built in 4.61s                      5.3s · 6 lines  ▸ details
-✘ Lint the codebase  ⎿ ✖ 2 problems (2 errors, 0 warnings)  exit 1 · 1.8s  ▸ details
+✔ ⚗ Run the test suite  ⎿ Tests  73 passed (73)              5.3s · 13 lines  ▸ details
+✔ ⚙ Production build  ⎿ ✓ built in 4.61s                      5.3s · 6 lines  ▸ details
+✘ $ Lint the codebase  ⎿ ✖ 2 problems (2 errors, 0 warnings)  exit 1 · 1.8s  ▸ details
 ```
 
 ## Install
@@ -58,6 +58,29 @@ Answer `y` to add the marketplace, then pick a scope (user scope loads it in eve
 
 On the terminal's main screen (not fullscreen), finished rows keep Claude Code's own `⎿` result block, so ctrl+o still expands the output. The desktop app, VS Code and mobile keep their native rows. Shells that Claude Code would fold into "ran N shell commands" are unfolded so each gets its card.
 
+### Command icons
+
+A muted command icon sits between the status indicator and the title, including running, failed and background rows. Reading, listing, navigating, searching, editing, deleting, copying, moving, creating, Git, tests, builds and downloads each have their own icon.
+
+Set `SHELLCAST_ICONS` before starting Claude Code:
+
+| Value | Icons |
+| --- | --- |
+| `unicode` (default) | Plain symbols such as `▤` for reading, `≡` for listing and `↳` for navigation. |
+| `nerd` | Set A: thin Codicons outlines. |
+| `nerd-bold` | Set B: bolder Font Awesome symbols, with a Git logo and folder-plus icon. |
+| `none` | Status indicators only. |
+
+Both Nerd Font sets need a [Nerd Font](https://www.nerdfonts.com/) selected in your terminal; the **Nerd Font Mono** variant keeps the icon column one cell wide.
+
+```sh
+SHELLCAST_ICONS=nerd-bold claude
+```
+
+To keep the preference, add `export SHELLCAST_ICONS=nerd-bold` to your shell configuration, or set `env.SHELLCAST_ICONS` in `~/.claude/settings.json` for all Claude sessions. Use `nerd` to switch back to A. The font choice is explicit, rather than inferred from which fonts are installed.
+
+Labels come from the command, not its description: `sed -n` gets a document and `sed -i` a pencil. Leading directory changes are skipped when another command follows (`cd project && npm test` gets a flask). Detection is best effort for shell scripts; unknown commands get a terminal icon. Icon selection never changes command execution.
+
 ## How live output works
 
 Claude Code streams each shell's combined output to `<tmp>/claude-<uid>/<project>/<session>/tasks/b<id>.output`. A call claims the first such file that appears after it starts, and a 300 ms ticker reads it while the call runs: ANSI codes stripped, `\r` progress lines collapsed to their latest frame. shellcast only reads that folder. If it can't find it, cards still draw, just without the live tail.
@@ -72,4 +95,4 @@ claude plugin test .                     # tests/*.test.ts(x)
 
 The demos are real Claude Code sessions in a throwaway sample project, recorded with a scripted stand-in for the model so both runs behave identically.
 
-Layout: `hooks/register.tsx` (the hooks), `hooks/card.tsx` (drawing), `hooks/live.ts` (output tracking), `hooks/format.ts` (pure helpers), `types/index.d.ts` (the `$.state` contract).
+Layout: `hooks/register.tsx` (the hooks), `hooks/card.tsx` (drawing), `hooks/icons.ts` (command icons), `hooks/live.ts` (output tracking), `hooks/format.ts` (pure helpers), `types/index.d.ts` (the `$.state` contract).

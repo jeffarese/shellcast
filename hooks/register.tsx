@@ -4,6 +4,7 @@ import type { Register } from 'claude-code'
 import { drawCard, drawPinned, footerTail } from './card'
 import type { BashInput, BashOutput, Card, Pinned } from './card'
 import { parseNotifications } from './format'
+import { iconMode } from './icons'
 import { BLANK, begin, connect, connected, end, ensureTicker, settle, textOf } from './live'
 
 const runs = atom({ plugin: 'shellcast', key: 'runs' } as const, BLANK)
@@ -107,6 +108,7 @@ export const register: Register = on => {
       els: $.ui.resolve(e),
       title: input.description?.trim() || command.split('\n')[0] || 'Shell',
       command,
+      iconMode: iconMode(await $.env.get('SHELLCAST_ICONS')),
       run: await read($, memberOf(runs, e)),
       columns: e.viewport?.columns ?? 100,
       isOpen: await read($, memberOf(expanded, e)),
@@ -140,9 +142,10 @@ export const register: Register = on => {
     if (shells.length === 0) return next(e)
     const { Box } = $.ui.resolve(e)
     const below = await next(e)
+    const icons = iconMode(await $.env.get('SHELLCAST_ICONS'))
     return (
       <Box flexDirection="column">
-        {drawPinned($.ui.resolve(e), shells, e.props.bodyColumns, e.props.maxRows)}
+        {drawPinned($.ui.resolve(e), shells, e.props.bodyColumns, e.props.maxRows, icons)}
         {below}
       </Box>
     )

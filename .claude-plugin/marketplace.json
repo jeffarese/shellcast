@@ -1,6 +1,7 @@
 {
   "name": "shellcast",
   "owner": { "name": "Jeff Arese" },
+  "metadata": { "description": "Live inline shell command cards for Claude Code." },
   "plugins": [
     {
       "name": "shellcast",

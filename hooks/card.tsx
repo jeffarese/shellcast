@@ -16,6 +16,8 @@ import {
   tailLines,
 } from './format'
 import { READ_WHOLE_BYTES, streamPath } from './live'
+import { commandIcon } from './icons'
+import type { IconMode } from './icons'
 
 type Els = Elements['terminal']
 
@@ -63,6 +65,7 @@ export type Card = {
   els: Els
   title: string
   command: string
+  iconMode?: IconMode
   run: ShellRun
   columns: number
   isOpen: boolean
@@ -118,10 +121,12 @@ function Header(
   subtitle?: string,
 ): RenderElement {
   const { Box, Text, Button } = card.els
+  const icon = commandIcon(card.command, card.iconMode)
   return (
     <Box>
       <Box flexShrink={0}>
         <Text color={glyphColor} bold>{`${glyph} `}</Text>
+        {icon !== '' && <Text dimColor>{`${icon} `}</Text>}
       </Box>
       <Box flexGrow={1} flexShrink={1}>
         <Text wrap="truncate-end">
@@ -492,8 +497,9 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text
 }
 
-function BandRow(els: Els, { title, run }: Pinned, columns: number): RenderElement {
+function BandRow(els: Els, { title, command, run }: Pinned, columns: number, iconMode: IconMode): RenderElement {
   const { Box, Text } = els
+  const icon = commandIcon(command, iconMode)
   const pulse = run.ticks % 4 < 2 ? '◉' : '○'
   const elapsed = elapsedOf(run)
   const progress = detectProgress(run.tail)
@@ -504,6 +510,7 @@ function BandRow(els: Els, { title, run }: Pinned, columns: number): RenderEleme
     <Box>
       <Box flexShrink={0}>
         <Text color="suggestion" bold>{`${pulse} `}</Text>
+        {icon !== '' && <Text dimColor>{`${icon} `}</Text>}
         <Text bold>{`${clip(bandTitle(title), Math.max(12, Math.floor(columns / 3)))}  `}</Text>
         {meter !== undefined && <Text color="success">{meter.filled}</Text>}
         {meter !== undefined && <Text color="inactive">{meter.empty}</Text>}
@@ -529,7 +536,7 @@ const PINNED_ROWS = 2 + 1 + 1 + BACKGROUND_LINES + 1 + 1
  * Running background shells, pinned above the prompt while they run: a whole
  * live card each while they fit in the band's rows, one live row each past that.
  */
-export function drawPinned(els: Els, shells: readonly Pinned[], columns: number, maxRows: number): RenderElement {
+export function drawPinned(els: Els, shells: readonly Pinned[], columns: number, maxRows: number, iconMode: IconMode = 'unicode'): RenderElement {
   const { Box, Text } = els
   let budget = maxRows
   const parts: RenderElement[] = []
@@ -541,6 +548,7 @@ export function drawPinned(els: Els, shells: readonly Pinned[], columns: number,
         els,
         title: shell.title,
         command: shell.command,
+        iconMode,
         run: shell.run,
         columns,
         isOpen: false,
@@ -550,7 +558,7 @@ export function drawPinned(els: Els, shells: readonly Pinned[], columns: number,
       parts.push(BackgroundLive(card, shell.run.background?.taskId ?? ''))
       budget -= PINNED_ROWS
     } else if (budget > 1 || rowsLeft === 1) {
-      parts.push(BandRow(els, shell, columns))
+      parts.push(BandRow(els, shell, columns, iconMode))
       budget -= 1
     } else {
       more += 1

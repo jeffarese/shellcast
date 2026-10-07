@@ -14,7 +14,8 @@ const call = (props: object) => ({
   ...props,
 })
 
-test('a call that just started is a compact row, so quick ones never flash', async $ => {
+test('a call that just started is a compact row, so quick ones never flash', async ($, on) => {
+  mock.env(on, {})
   const ui = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
@@ -28,7 +29,8 @@ test('a call that just started is a compact row, so quick ones never flash', asy
   expect(await ui.find({ type: 'Text', text: /waiting for output/ })).toBeUndefined()
 })
 
-test('a call the model is still writing is pending, not finished', async $ => {
+test('a call the model is still writing is pending, not finished', async ($, on) => {
+  mock.env(on, {})
   const ui = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
@@ -42,6 +44,7 @@ test('a call the model is still writing is pending, not finished', async $ => {
 })
 
 test('a shell still running after a moment opens into the live card', async ($, on) => {
+  mock.env(on, {})
   const clock = mock.clock(on, { now: 1_000 })
   on('session.start', () => ({ cwd: '/work' }))
   let id = ''
@@ -70,7 +73,8 @@ test('a shell still running after a moment opens into the live card', async ($, 
   expect((await running).deny).toBeUndefined()
 })
 
-test('a finished call is a compact row with its last output', async $ => {
+test('a finished call is a compact row with its last output', async ($, on) => {
+  mock.env(on, {})
   const ui = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
@@ -81,12 +85,14 @@ test('a finished call is a compact row with its last output', async $ => {
     }),
   })
   expect(await ui.find({ type: 'Text', text: '✔ ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '⚗ ' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '3 lines' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Tests  12 passed' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'one' })).toBeUndefined()
 })
 
-test('details open the full output and close again', async $ => {
+test('details open the full output and close again', async ($, on) => {
+  mock.env(on, {})
   const ui = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
@@ -104,7 +110,38 @@ test('details open the full output and close again', async $ => {
   expect(await ui.find({ type: 'Text', text: 'one' })).toBeUndefined()
 })
 
-test('a failing call draws its exit code and output', async $ => {
+test('bold Nerd Font command icons stay the same as execution status changes', async ($, on) => {
+  mock.env(on, { SHELLCAST_ICONS: 'nerd-bold' })
+  for (const state of [
+    { isRunning: true },
+    { output: { stdout: 'passed\n', stderr: '', interrupted: false } },
+    { isErrored: true, output: 'Exit code 1\nfailed' },
+    { isInterrupted: true },
+  ]) {
+    const ui = await $.ui.mount({
+      plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+      props: call({ input: { command: 'cd project && npm test', description: 'Run tests' }, ...state }),
+    })
+    expect(await ui.find({ type: 'Text', text: '\uf0c3 ' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '\uea79 ' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: '⚗ ' })).toBeUndefined()
+  }
+})
+
+test('icons can be disabled while preserving the status and title', async ($, on) => {
+  mock.env(on, { SHELLCAST_ICONS: 'none' })
+  const ui = await $.ui.mount({
+    plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+    props: call({ output: { stdout: 'passed\n', stderr: '', interrupted: false } }),
+  })
+  expect(await ui.find({ type: 'Text', text: '✔ ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Run unit tests' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '⚗ ' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: '\uea79 ' })).toBeUndefined()
+})
+
+test('a failing call draws its exit code and output', async ($, on) => {
+  mock.env(on, {})
   const ui = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
@@ -116,7 +153,8 @@ test('a failing call draws its exit code and output', async $ => {
   expect(await ui.find({ type: 'Text', text: 'expected 1 got 2' })).toBeDefined()
 })
 
-test('a refused call is not drawn as a failure', async $ => {
+test('a refused call is not drawn as a failure', async ($, on) => {
+  mock.env(on, {})
   const ui = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
@@ -142,6 +180,7 @@ test('in fullscreen the card owns the output and the engine block is hidden', as
 })
 
 test('on the main screen the engine keeps its result block and the card no tail', async ($, on) => {
+  mock.env(on, {})
   on('ui.render', { component: 'ToolResult' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine result</Text>
@@ -171,6 +210,7 @@ test('other surfaces keep their own rows', async ($, on) => {
 })
 
 test('a call the agent ran is timed and drawn from what the mod observed', async ($, on) => {
+  mock.env(on, {})
   const clock = mock.clock(on, { now: 1_000 })
   on('session.start', () => ({ cwd: '/work' }))
   let id = ''
@@ -221,14 +261,17 @@ async function startBackground(...[$, on]: Parameters<TestBody>) {
 const BAND = { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 90, scroll: { offset: 0, bodyRows: 10 }, view: {} }
 
 test('a running background shell is pinned above the prompt as its live card', async ($, on) => {
+  mock.env(on, { SHELLCAST_ICONS: 'nerd' })
   await startBackground($, on)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
   expect(await band.find({ type: 'Text', text: 'Run the e2e suite' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: 'background' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: '\uea85 ' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /waiting for output/ })).toBeDefined()
 })
 
 test('in the transcript it stays one row that points at the pinned card', async ($, on) => {
+  mock.env(on, {})
   const id = await startBackground($, on)
   const row = await $.ui.mount({
     plugin: PLUGIN,
@@ -243,11 +286,13 @@ test('in the transcript it stays one row that points at the pinned card', async 
 })
 
 test('a pinned band with little room falls back to one row per shell', async ($, on) => {
+  mock.env(on, { SHELLCAST_ICONS: 'nerd' })
   await startBackground($, on)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: { ...BAND, maxRows: 3 } })
   expect(await band.find({ type: 'Text', text: /Run the e2e suite/ })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /waiting for output/ })).toBeDefined()
   expect(await band.find({ type: 'Text', text: 'background' })).toBeUndefined()
+  expect(await band.find({ type: 'Text', text: '\uea85 ' })).toBeDefined()
 })
 
 test("the footer's shell count says what the shell is doing", async ($, on) => {

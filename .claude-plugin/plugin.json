@@ -1,6 +1,6 @@
 {
   "name": "shellcast",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Live inline cards for every shell command Claude runs: streaming output, progress bars, timing and exit status right in the transcript.",
   "author": { "name": "Jeff Arese" },
   "homepage": "https://github.com/jeffarese/shellcast",
