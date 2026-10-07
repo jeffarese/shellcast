@@ -1,9 +1,9 @@
 import { atom, memberOf, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { BuiltinToolResults, Register } from 'claude-code'
 
 import { drawCard, drawPinned, footerTail } from './card'
 import type { BashInput, BashOutput, Card, Pinned } from './card'
-import { parseNotifications } from './format'
+import { countLines, parseNotifications } from './format'
 import { iconMode } from './icons'
 import { BLANK, begin, connect, connected, end, ensureTicker, settle, textOf } from './live'
 
@@ -124,6 +124,18 @@ export const register: Register = on => {
     if (e.surface !== 'terminal' || e.viewport?.isFullscreen !== true) return next(e)
     const { Box } = $.ui.resolve(e)
     return <Box />
+  })
+
+  // Keep the native Write(path) row, but omit the source preview beneath it.
+  on('ui.render', { component: 'ToolResult', props: { tool: 'Write' } }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.isErrored) return next(e)
+    const output = e.props.output as Partial<BuiltinToolResults['Write']> | null | undefined
+    if (output?.staged || typeof output?.filePath !== 'string' || typeof output.content !== 'string') return next(e)
+    const cwd = (await $.session.cwd()).replace(/\/$/, '')
+    const path = output.filePath.startsWith(`${cwd}/`) ? output.filePath.slice(cwd.length + 1) : output.filePath
+    const lines = countLines(output.content)
+    const { Box, Text } = $.ui.resolve(e)
+    return <Box paddingLeft={2}><Text>{`⎿  Wrote ${lines} ${lines === 1 ? 'line' : 'lines'} to ${path}`}</Text></Box>
   })
 
   // Shells folded into "ran 3 shell commands" would hide their cards.

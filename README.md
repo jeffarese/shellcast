@@ -16,16 +16,16 @@ What is that shell doing? Is it stuck? How far along is it? shellcast puts every
     <th width="50%">With shellcast</th>
   </tr>
   <tr>
-    <td><a href="assets/before.gif"><img src="assets/before.gif" alt="Stock Claude Code: shells fold into 'Ran 3 shell commands' and the background e2e suite is only '1 shell' in the footer" width="100%"></a></td>
-    <td><a href="assets/after.gif"><img src="assets/after.gif" alt="With shellcast: each shell is a card, finished ones fold into one-liners, and the background e2e suite stays pinned above the prompt with a live progress bar" width="100%"></a></td>
+    <td><a href="assets/before.gif"><img src="assets/before.gif" alt="Stock Claude Code: three file writes fill the transcript with source previews, shells fold into groups, and the background e2e suite is only '1 shell' in the footer" width="100%"></a></td>
+    <td><a href="assets/after.gif"><img src="assets/after.gif" alt="With shellcast: command icons identify each shell, three file writes keep just their headers and summaries, and the background e2e suite stays pinned with live progress" width="100%"></a></td>
   </tr>
   <tr>
-    <td>Three commands fold into "Ran 3 shell commands"; the e2e suite is just "1 shell" in the footer while the agent writes.</td>
-    <td>Each shell gets a card, finished ones fold into one-liners, and the e2e suite stays pinned above the prompt with its progress.</td>
+    <td>Source previews fill the transcript after a few writes. Shells fold into groups, and the e2e suite is just "1 shell" in the footer.</td>
+    <td>Command icons, one-line shell results, and compact write summaries keep the work readable. The e2e suite stays pinned with live progress.</td>
   </tr>
 </table>
 
-<p align="center"><sub>Both sessions replay the same scripted agent, so the only difference is shellcast. Click either one to see it full size, or watch the <a href="assets/side-by-side.mp4">side-by-side MP4</a>.</sub></p>
+<p align="center"><sub>Both sessions replay the same scripted agent and fixture checks. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>. Click either GIF to see it full size, or watch the <a href="assets/side-by-side.mp4">side-by-side MP4</a>, <a href="assets/after.mp4">shellcast MP4</a>, or <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
 
 While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
 
@@ -57,6 +57,8 @@ Answer `y` to add the marketplace, then pick a scope (user scope loads it in eve
 | **Details** | In the fullscreen layout, `▸ details` on any card opens the full command, stdout and stderr, timing, task id and output file. |
 
 On the terminal's main screen (not fullscreen), finished rows keep Claude Code's own `⎿` result block, so ctrl+o still expands the output. The desktop app, VS Code and mobile keep their native rows. Shells that Claude Code would fold into "ran N shell commands" are unfolded so each gets its card.
+
+Successful `Write` calls in the terminal keep just the `Write(path)` header and `Wrote N lines to path` summary, without the source preview. Errors and writes awaiting owner review keep their native results.
 
 ### Command icons
 
@@ -93,6 +95,6 @@ claude plugin validate .                 # what the engine sees
 claude plugin test .                     # tests/*.test.ts(x)
 ```
 
-The demos are real Claude Code sessions in a throwaway sample project, recorded with a scripted stand-in for the model so both runs behave identically.
+The demos are real Claude Code sessions in a throwaway sample project, recorded with a scripted stand-in for the model and simulated test/build output so both runs follow the same sequence. The file writes and shellcast rendering run normally.
 
 Layout: `hooks/register.tsx` (the hooks), `hooks/card.tsx` (drawing), `hooks/icons.ts` (command icons), `hooks/live.ts` (output tracking), `hooks/format.ts` (pure helpers), `types/index.d.ts` (the `$.state` contract).
