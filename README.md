@@ -11,18 +11,13 @@ I got tired of my agent's shells being reduced to this:
 What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Quick commands stay as one-line rows with their own icons. Completed tool blocks collapse into a summary of the work and an icon strip, keeping the whole sequence easy to scan:
 
 <p align="center">
-  <strong>With shellcast</strong><br>
-  <a href="assets/after.mp4"><img src="assets/after.gif" alt="Quick commands show their icons before collapsing into a compact block, three writes stay compact, and a longer production build opens a live progress card before its block folds down" width="100%"></a>
+  <strong>Stock Claude Code (left) · shellcast (right)</strong><br>
+  <a href="assets/side-by-side.mp4"><img src="assets/side-by-side.gif" alt="Synchronized before and after: stock Claude Code on the left; shellcast on the right with descriptive tool summaries, command icons, compact writes, and a live build card" width="100%"></a>
 </p>
 
-<p align="center"><sub>Eleven commands collapse into two blocks with their icons intact, alongside three compact Write summaries. One longer build opens a live card before its block folds down. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>. Watch the <a href="assets/after.mp4">shellcast MP4</a> or the <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
+<p align="center"><sub>The same prompt, tool calls, file contents, and eight-second build, with synchronized scripted replies. A search, a file read, and nine shell commands collapse into descriptive blocks with their icons intact; three Write summaries stay compact. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>.</sub></p>
 
-<p align="center">
-  <strong>Stock Claude Code — the same run</strong><br>
-  <a href="assets/before.mp4"><img src="assets/before.gif" alt="The identical workflow in stock Claude Code: shell commands fold into groups, each Write fills the transcript with source previews, and the longer build uses the native Bash output" width="100%"></a>
-</p>
-
-<p align="center"><sub>The same prompt, commands, file contents, and eight-second build, with synchronized scripted replies. Watch the <a href="assets/before.mp4">before MP4</a> or the <a href="assets/side-by-side.mp4">side-by-side comparison</a>.</sub></p>
+<p align="center"><sub>Open the <a href="assets/side-by-side.mp4">full-size comparison</a>, individual <a href="assets/before.mp4">before</a> / <a href="assets/after.mp4">after</a> videos, or the <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
 
 While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
 
