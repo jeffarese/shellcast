@@ -8,24 +8,15 @@ I got tired of my agent's shells being reduced to this:
   <img src="assets/before.png" alt="Claude Code's footer: auto mode on · 1 shell, 2 monitors · 1 agent" width="560">
 </p>
 
-What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Same prompt, same project:
+What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Quick commands stay as one-line rows with their own icons. After a few commands and file writes, the whole sequence is still easy to scan:
 
-<table>
-  <tr>
-    <th width="50%">Stock Claude Code</th>
-    <th width="50%">With shellcast</th>
-  </tr>
-  <tr>
-    <td><a href="assets/before.gif"><img src="assets/before.gif" alt="Stock Claude Code: three file writes fill the transcript with source previews, shells fold into groups, and the background e2e suite is only '1 shell' in the footer" width="100%"></a></td>
-    <td><a href="assets/after.gif"><img src="assets/after.gif" alt="With shellcast: command icons identify each shell, three file writes keep just their headers and summaries, and the background e2e suite stays pinned with live progress" width="100%"></a></td>
-  </tr>
-  <tr>
-    <td>Source previews fill the transcript after a few writes. Shells fold into groups, and the e2e suite is just "1 shell" in the footer.</td>
-    <td>Command icons, one-line shell results, and compact write summaries keep the work readable. The e2e suite stays pinned with live progress.</td>
-  </tr>
-</table>
+<p align="center">
+  <a href="assets/after.mp4"><img src="assets/after.gif" alt="Eleven one-line shell results with list, read, search, create, copy, move, edit, delete, Git, test, and build icons, alongside three compact Write summaries" width="100%"></a>
+</p>
 
-<p align="center"><sub>Both sessions replay the same scripted agent and fixture checks. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>. Click either GIF to see it full size, or watch the <a href="assets/side-by-side.mp4">side-by-side MP4</a>, <a href="assets/after.mp4">shellcast MP4</a>, or <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
+<p align="center"><sub>Eleven command rows, three compact Write summaries. Icons use <code>SHELLCAST_ICONS=nerd-bold</code>. Watch the <a href="assets/after.mp4">shellcast MP4</a> or the <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
+
+<p align="center"><sub>Compare the <a href="assets/before.gif">stock Claude Code recording</a> or watch the <a href="assets/side-by-side.mp4">side-by-side MP4</a>. Both sessions replay the same scripted agent and fixture checks.</sub></p>
 
 While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
 
