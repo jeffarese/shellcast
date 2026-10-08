@@ -1,6 +1,6 @@
 {
   "name": "shellcast",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Tidy one-line shell command rows with live output, progress, timing and exit status, plus details on demand.",
   "author": { "name": "Jeff Arese" },
   "homepage": "https://github.com/jeffarese/shellcast",

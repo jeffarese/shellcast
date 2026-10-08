@@ -21,6 +21,8 @@ What is that shell doing? Is it stuck? How far along is it? shellcast puts every
 
 Commands stay on one line from start to finish, with live output, reported progress and elapsed time while running. They never automatically expand into a card; use `▸ details` when you want more:
 
+Compact command labels omit leading directory setup: `cd /long/worktree/path && npm test` shows as `npm test`. Descriptions stay intact, and details retain the full original command.
+
 ```
 ✔ ⚗ Run the test suite  ⎿ Tests  73 passed (73)              5.3s · 13 lines  ▸ details
 ✔ ⚙ Production build  ⎿ ✓ built in 4.61s                      5.3s · 6 lines  ▸ details

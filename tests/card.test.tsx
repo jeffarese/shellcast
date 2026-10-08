@@ -117,6 +117,24 @@ test('details open the full output and close again', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: 'one' })).toBeUndefined()
 })
 
+test('directory setup is hidden in compact titles but retained in command details', async ($, on) => {
+  mock.env(on, {})
+  const command = 'cd /long/worktree/dashboard && git status --short'
+  const ui = await $.ui.mount({
+    plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+    props: call({ input: { command }, isRunning: true }),
+  })
+  expect(await ui.find({ type: 'Text', text: 'git status --short' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /cd \/long/ })).toBeUndefined()
+  await ui.press({ key: 'details' })
+  expect(JSON.stringify(await ui.drawn())).toContain(command)
+  await ui.press({ key: 'details' })
+  await ui.redraw(call({ input: { command, description: 'Check worktree status' }, output: { stdout: '' } }))
+  expect(await ui.find({ type: 'Text', text: 'Check worktree status' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '$ git status --short' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /cd \/long/ })).toBeUndefined()
+})
+
 test('bold Nerd Font command icons stay the same as execution status changes', async ($, on) => {
   mock.env(on, { SHELLCAST_ICONS: 'nerd-bold' })
   for (const state of [

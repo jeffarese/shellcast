@@ -1,6 +1,25 @@
 import { expect, test } from 'claude-code/testing'
 
-import { commandIcon, iconMode } from '../hooks/icons'
+import { commandIcon, commandLabel, iconMode } from '../hooks/icons'
+
+test('compact labels omit directory setup while preserving command syntax', () => {
+  const cases: [string, string][] = [
+    ['cd /long/worktree/dashboard && git status --short', 'git status --short'],
+    ["cd '/a path/with; punctuation' && python3 - <<'EOF'\nprint(1)\nEOF", "python3 - <<'EOF'"],
+    ['cd a\\;b && cd src && NODE_ENV=test npm test', 'NODE_ENV=test npm test'],
+    ['cd project; rg "a && b" src | head -20', 'rg "a && b" src | head -20'],
+    ['cd project\nnpm test', 'npm test'],
+    ['cd project && \\\n npm test', 'npm test'],
+    ['cd "$HOME/project" && ls', 'ls'],
+    ['cd project', 'cd project'],
+    ['cd project &&', 'cd project &&'],
+    ['cd project || echo failed', 'cd project || echo failed'],
+    ['echo "cd project && npm test"', 'echo "cd project && npm test"'],
+    ['cd $(pwd) && npm test', 'cd $(pwd) && npm test'],
+    ['git status && cd project && npm test', 'git status && cd project && npm test'],
+  ]
+  for (const [source, label] of cases) expect(commandLabel(source)).toBe(label)
+})
 
 test('the outline set matches the preview for common operations', () => {
   const cases: [string, string][] = [

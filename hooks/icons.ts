@@ -43,8 +43,9 @@ const COMMANDS: Record<string, Kind> = {
 }
 
 /** Split only at unquoted shell separators; quoted arguments stay together. */
-function* commands(source: string): Generator<{ words: string[]; separator: string }> {
+function* commands(source: string): Generator<{ words: string[]; separator: string; start: number; end: number }> {
   let words: string[] = []
+  let start = 0
   let word = ''
   let started = false
   let quote = ''
@@ -76,8 +77,9 @@ function* commands(source: string): Generator<{ words: string[]; separator: stri
     if (ch === ';' || ch === '|' || ch === '&' || ch === '\n') {
       flush()
       const separator = (ch === '&' || ch === '|') && text[i + 1] === ch ? ch + text[++i] : ch
-      if (words.length > 0) yield { words, separator }
+      if (words.length > 0) yield { words, separator, start, end: i + 1 }
       words = []
+      start = i + 1
     } else if (/\s/.test(ch)) {
       flush()
     } else {
@@ -86,7 +88,21 @@ function* commands(source: string): Generator<{ words: string[]; separator: stri
     }
   }
   flush()
-  if (words.length > 0) yield { words, separator: '' }
+  if (words.length > 0) yield { words, separator: '', start, end: text.length }
+}
+
+/** A display-only label: omit leading cd setup, retaining the original syntax. */
+export function commandLabel(source: string): string {
+  let start = 0
+  for (const part of commands(source)) {
+    // Be conservative around substitutions, whose contents may contain shell
+    // separators of their own. Never hide a standalone cd or a failure branch.
+    if (part.words[0] !== 'cd' || !['&&', ';', '\n'].includes(part.separator)
+      || /\$\(|`/.test(source.slice(part.start, part.end))) break
+    if (source.slice(part.end).trim() === '') break
+    start = part.end
+  }
+  return source.slice(start).replace(/\\\r?\n/g, ' ').trim().split('\n')[0]?.trim() ?? ''
 }
 
 const basename = (word: string) => word.split('/').pop() ?? word

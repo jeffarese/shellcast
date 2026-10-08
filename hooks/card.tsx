@@ -16,7 +16,7 @@ import {
   tailLines,
 } from './format'
 import { READ_WHOLE_BYTES, streamPath } from './live'
-import { commandIcon } from './icons'
+import { commandIcon, commandLabel } from './icons'
 import type { IconMode } from './icons'
 
 type Els = Elements['terminal']
@@ -110,6 +110,10 @@ function elapsedOf(run: ShellRun): number | undefined {
   return (run.endedAt ?? run.now) - from
 }
 
+function displayTitle(title: string, command: string): string {
+  return title.trim() === command.split('\n')[0]?.trim() ? commandLabel(command) : title
+}
+
 function Header(
   card: Card,
   glyph: string,
@@ -127,7 +131,7 @@ function Header(
       </Box>
       <Box flexGrow={1} flexShrink={1}>
         <Text wrap="truncate-end">
-          <Text bold>{card.title}</Text>
+          <Text bold>{displayTitle(card.title, card.command)}</Text>
           {subtitle !== undefined && subtitle !== '' && <Text dimColor>{`  ${subtitle}`}</Text>}
         </Text>
       </Box>
@@ -346,7 +350,7 @@ function Compact(
 ): RenderElement {
   const { Box, Text } = card.els
   const gist = card.ownsOutput ? lines[lines.length - 1]?.trim() : undefined
-  const firstLine = card.command.split('\n')[0]?.trim() ?? ''
+  const firstLine = commandLabel(card.command)
   const subtitle = gist !== undefined && gist !== '' ? `⎿ ${gist}` : firstLine !== '' ? `$ ${firstLine}` : undefined
   const right: RenderNode[] = [
     ...chips.map(chip => <Text color={chip.color}>{`${chip.text}  `}</Text>),
@@ -496,7 +500,7 @@ function BandRow(els: Els, { title, command, run }: Pinned, columns: number, ico
       <Box flexShrink={0}>
         <Text color="suggestion">{'◉ '}</Text>
         {icon !== '' && <Text dimColor>{`${icon} `}</Text>}
-        <Text bold>{`${clip(bandTitle(title), Math.max(12, Math.floor(columns / 3)))}  `}</Text>
+        <Text bold>{`${clip(bandTitle(displayTitle(title, command)), Math.max(12, Math.floor(columns / 3)))}  `}</Text>
         {progress !== undefined && <Text color="success">{progress.label}</Text>}
       </Box>
       <Box flexGrow={1} flexShrink={1}>
@@ -565,10 +569,10 @@ export function drawPinned(els: Els, shells: readonly Pinned[], columns: number,
 /** What the footer's "1 shell" is doing, in a few words: `→ Run e2e 12/24 24s`. */
 export function footerTail(shells: readonly Pinned[]): string | undefined {
   if (shells.length === 0) return undefined
-  const parts = shells.slice(0, 1).map(({ title, run }) => {
+  const parts = shells.slice(0, 1).map(({ title, command, run }) => {
     const progress = detectProgress(run.tail)
     const elapsed = elapsedOf(run)
-    return [clip(bandTitle(title), 22), progress?.label, elapsed === undefined ? undefined : duration(elapsed)]
+    return [clip(bandTitle(displayTitle(title, command)), 22), progress?.label, elapsed === undefined ? undefined : duration(elapsed)]
       .filter(part => part !== undefined)
       .join(' ')
   })
