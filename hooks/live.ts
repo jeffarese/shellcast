@@ -56,6 +56,9 @@ let lastScanAt = 0
 let uid: string | undefined
 const baselines = new Map<string, ReadonlySet<string>>()
 const claimed = new Set<string>()
+// Keep the owner after unpinning: a delayed completion notice can still supply
+// the real exit status after an engine snapshot only told us it stopped running.
+const taskOwners = new Map<string, string>()
 
 export function connect(next: Io) {
   io = next
@@ -232,6 +235,7 @@ export async function end(io: Io, id: string, taskId: string | undefined) {
   }
   const file = `${taskId}.output`
   claimed.add(file)
+  taskOwners.set(taskId, id)
   await io.setRun(id, run => ({
     ...run,
     now: endedAt,
@@ -245,9 +249,14 @@ export async function end(io: Io, id: string, taskId: string | undefined) {
 
 /** A background shell ended (its notification arrived, or TaskStop ran). */
 export async function settle(io: Io, note: Notification) {
-  for (const id of await io.getActive()) {
+  if (!['completed', 'failed', 'killed', 'stopped', 'finished'].includes(note.status)) return
+  const owner = taskOwners.get(note.taskId)
+  const ids = owner === undefined ? await io.getActive() : [owner]
+  for (const id of ids) {
     const run = await io.getRun(id)
     if (run.background?.taskId !== note.taskId) continue
+    if (note.status === 'finished' && run.background.status !== 'running') continue
+    taskOwners.set(note.taskId, id)
     const now = await io.now()
     const path = run.file === undefined ? undefined : streamPath(run.file)
     const last = path === undefined ? 'gone' : await sample(io, path, run, now)
@@ -265,6 +274,19 @@ export async function settle(io: Io, note: Notification) {
     }))
     await io.setActive(list => list.filter(other => other !== id))
     await io.setPinned(list => list.filter(other => other !== id))
+  }
+}
+
+/** The engine's in-flight tasks are authoritative, even if a notice was lost.
+ * Absence proves only that a shell ended, never that it succeeded.
+ */
+export async function reconcile(io: Io, tasks: readonly { id: string; type: string }[]) {
+  const running = new Set(tasks.filter(task => task.type === 'shell').map(task => task.id))
+  for (const id of await io.getActive()) {
+    const run = await io.getRun(id)
+    if (run.background?.status === 'running' && !running.has(run.background.taskId)) {
+      await settle(io, { taskId: run.background.taskId, status: 'finished' })
+    }
   }
 }
 

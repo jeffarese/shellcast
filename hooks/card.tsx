@@ -451,12 +451,16 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
       // the transcript never reflows as the shell runs or ends.
       const elapsed = elapsedOf(run)
       const meta = `pinned ↓${elapsed === undefined ? '' : ` · ${duration(elapsed)}`}`
-      return Compact(card, run.ticks % 4 < 2 ? '◉' : '○', 'suggestion', meta, [], chips, null, 'suggestion')
+      return Compact(card, run.ticks % 4 < 2 ? '◉' : '○', 'suggestion', meta, [], chips, () => Details(card, output, undefined), 'suggestion')
     }
     if (status === undefined) {
       return Compact(card, '◉', 'suggestion', `background · ${taskId}`, [], chips, () => Details(card, output, undefined))
     }
     const exit = run.background?.exitCode
+    if (status === 'finished') {
+      return Compact(card, '○', 'subtle', metaOf(run, run.lines ?? run.tail.length, ['background', 'finished · exit unknown']),
+        run.tail.slice(-DONE_LINES), chips, () => Details(card, output, undefined))
+    }
     const isKilled = status === 'killed' || status === 'stopped'
     const isOk = !isKilled && status === 'completed' && (exit === undefined || exit === 0)
     const glyph = isKilled ? '■' : isOk ? '✔' : '✘'
@@ -483,8 +487,6 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
   )
 }
 
-const BAND_METER = 14
-
 /** A running background shell, for the band and the footer. */
 export type Pinned = { title: string; command: string; run: ShellRun }
 
@@ -500,24 +502,16 @@ function clip(text: string, max: number): string {
 function BandRow(els: Els, { title, command, run }: Pinned, columns: number, iconMode: IconMode): RenderElement {
   const { Box, Text } = els
   const icon = commandIcon(command, iconMode)
-  const pulse = run.ticks % 4 < 2 ? '◉' : '○'
   const elapsed = elapsedOf(run)
   const progress = detectProgress(run.tail)
   const last = run.tail[run.tail.length - 1]?.trim()
-  const meter = progress !== undefined ? bar(progress.ratio, BAND_METER) : undefined
-  const glow = progress === undefined ? shimmer(run.ticks, BAND_METER) : undefined
   return (
     <Box>
       <Box flexShrink={0}>
-        <Text color="suggestion" bold>{`${pulse} `}</Text>
+        <Text color="suggestion">{'◉ '}</Text>
         {icon !== '' && <Text dimColor>{`${icon} `}</Text>}
         <Text bold>{`${clip(bandTitle(title), Math.max(12, Math.floor(columns / 3)))}  `}</Text>
-        {meter !== undefined && <Text color="success">{meter.filled}</Text>}
-        {meter !== undefined && <Text color="inactive">{meter.empty}</Text>}
-        {glow !== undefined && <Text color="inactive">{glow.before}</Text>}
-        {glow !== undefined && <Text color="suggestion">{glow.lit}</Text>}
-        {glow !== undefined && <Text color="inactive">{glow.after}</Text>}
-        {progress !== undefined && <Text bold>{` ${progress.label}`}</Text>}
+        {progress !== undefined && <Text color="success">{progress.label}</Text>}
       </Box>
       <Box flexGrow={1} flexShrink={1}>
         <Text dimColor wrap="truncate-end">{`  ${last ?? 'waiting for output…'}`}</Text>
@@ -533,12 +527,22 @@ function BandRow(els: Els, { title, command, run }: Pinned, columns: number, ico
 const PINNED_ROWS = 2 + 1 + 1 + BACKGROUND_LINES + 1 + 1
 
 /**
- * Running background shells, pinned above the prompt while they run: a whole
- * live card each while they fit in the band's rows, one live row each past that.
+ * Quiet rows by default, bounded independently of the terminal's height.
+ * Full live cards remain an explicit opt-in.
  */
-export function drawPinned(els: Els, shells: readonly Pinned[], columns: number, maxRows: number, iconMode: IconMode = 'unicode'): RenderElement {
+export function drawPinned(els: Els, shells: readonly Pinned[], columns: number, maxRows: number, iconMode: IconMode = 'unicode', layout: 'compact' | 'cards' = 'compact'): RenderElement {
   const { Box, Text } = els
-  let budget = maxRows
+  let budget = Math.max(0, Math.floor(maxRows))
+  if (layout === 'compact') {
+    const limit = Math.min(3, budget)
+    const shown = shells.slice(0, shells.length > limit ? Math.min(limit, Math.max(0, budget - 1)) : limit)
+    const more = shells.length - shown.length
+    return <Box flexDirection="column">
+      {shown.map(shell => BandRow(els, shell, columns, iconMode))}
+      {more > 0 && budget > shown.length && <Text dimColor>{`  +${more} more in the background`}</Text>}
+    </Box>
+  }
+  if (budget === 0) return <Box />
   const parts: RenderElement[] = []
   let more = 0
   for (const shell of shells) {
@@ -557,7 +561,7 @@ export function drawPinned(els: Els, shells: readonly Pinned[], columns: number,
       }
       parts.push(BackgroundLive(card, shell.run.background?.taskId ?? ''))
       budget -= PINNED_ROWS
-    } else if (budget > 1 || rowsLeft === 1) {
+    } else if (budget > 1 || (budget > 0 && rowsLeft === 1)) {
       parts.push(BandRow(els, shell, columns, iconMode))
       budget -= 1
     } else {
@@ -567,7 +571,7 @@ export function drawPinned(els: Els, shells: readonly Pinned[], columns: number,
   return (
     <Box flexDirection="column">
       {parts}
-      {more > 0 && <Text dimColor>{`  +${more} more in the background`}</Text>}
+      {more > 0 && budget > 0 && <Text dimColor>{`  +${more} more in the background`}</Text>}
     </Box>
   )
 }
@@ -575,12 +579,12 @@ export function drawPinned(els: Els, shells: readonly Pinned[], columns: number,
 /** What the footer's "1 shell" is doing, in a few words: `→ Run e2e 12/24 24s`. */
 export function footerTail(shells: readonly Pinned[]): string | undefined {
   if (shells.length === 0) return undefined
-  const parts = shells.map(({ title, run }) => {
+  const parts = shells.slice(0, 1).map(({ title, run }) => {
     const progress = detectProgress(run.tail)
     const elapsed = elapsedOf(run)
     return [clip(bandTitle(title), 22), progress?.label, elapsed === undefined ? undefined : duration(elapsed)]
       .filter(part => part !== undefined)
       .join(' ')
   })
-  return `→ ${parts.join(' · ')}`
+  return `→ ${parts.join(' · ')}${shells.length > 1 ? ` · +${shells.length - 1} more` : ''}`
 }

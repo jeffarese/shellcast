@@ -1,7 +1,7 @@
 /** A background shell's life after its call returned. */
 export type ShellBackground = {
   taskId: string
-  /** `running`, then the notification's word: `completed`, `failed`, `killed`. */
+  /** `running`, then the notification's status; `finished` if the exit is unknown. */
   status: string
   exitCode?: number
   endedAt?: number

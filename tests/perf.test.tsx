@@ -102,6 +102,7 @@ const SCENARIOS = {
     drawCard(card({ run: run({ background: { taskId: 'b1', status: 'running' } }) }), props({ output: { backgroundTaskId: 'b1' } })),
   'band · icons off': () => drawPinned(els, shells, 120, 40, 'none'),
   'band · 3 pinned shells': () => drawPinned(els, shells, 120, 40, 'nerd-bold'),
+  'band · 3 full cards': () => drawPinned(els, shells, 120, 40, 'nerd-bold', 'cards'),
   'footer · 3 shells': () => footerTail(shells),
 }
 
@@ -115,8 +116,9 @@ const BUDGET: Record<keyof typeof SCENARIOS, number> = {
   'interrupted · main screen': 11,
   'running · live card': 33,
   'background · transcript row': 11,
-  'band · icons off': 94,
-  'band · 3 pinned shells': 97,
+  'band · icons off': 28,
+  'band · 3 pinned shells': 31,
+  'band · 3 full cards': 97,
   'footer · 3 shells': 0,
 }
 

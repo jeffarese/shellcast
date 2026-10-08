@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
+import { footerTail } from '../hooks/card'
+import { BLANK } from '../hooks/live'
 
 const PLUGIN = 'shellcast'
 const VIEWPORT = { columns: 100, rows: 40, isFullscreen: true }
@@ -236,13 +238,15 @@ test('a call the agent ran is timed and drawn from what the mod observed', async
   expect(await ui.find({ type: 'Text', text: '0.0s · 1 line' })).toBeDefined()
 })
 
-async function startBackground(...[$, on]: Parameters<TestBody>) {
+async function startBackgrounds($: Parameters<TestBody>[0], on: Parameters<TestBody>[1], taskIds = ['b42']) {
   mock.clock(on, { now: 1_000 })
   on('session.start', () => ({ cwd: '/work' }))
-  let id = ''
+  on('classic.Stop', () => ({}))
+  const ids: string[] = []
   on('tool.call', { tool: 'Bash' }, (_, e) => {
-    id = e.tool_use_id
-    return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b42' } }
+    const taskId = taskIds[ids.length]
+    ids.push(e.tool_use_id)
+    return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: taskId } }
   })
   // What the engine draws beneath the plugin: an empty band, the hint as given.
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
@@ -254,20 +258,88 @@ async function startBackground(...[$, on]: Parameters<TestBody>) {
     return <Text>{`${e.props.hint}${e.props.tail === undefined ? '' : ` ${e.props.tail}`}`}</Text>
   })
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
-  await $.tool.call({ tool: 'Bash', command: './scripts/e2e.sh', description: 'Run the e2e suite', run_in_background: true })
-  return id
+  for (const taskId of taskIds) {
+    await $.tool.call({ tool: 'Bash', command: './scripts/e2e.sh', description: taskIds.length === 1 ? 'Run the e2e suite' : `Job ${taskId}`, run_in_background: true })
+  }
+  return ids
+}
+
+async function startBackground(...[$, on]: Parameters<TestBody>) {
+  return (await startBackgrounds($, on))[0]!
 }
 
 const BAND = { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 90, scroll: { offset: 0, bodyRows: 10 }, view: {} }
 
-test('a running background shell is pinned above the prompt as its live card', async ($, on) => {
+test('background shells stay compact even when the terminal has room for cards', async ($, on) => {
   mock.env(on, { SHELLCAST_ICONS: 'nerd' })
   await startBackground($, on)
-  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
-  expect(await band.find({ type: 'Text', text: 'Run the e2e suite' })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: 'background' })).toBeDefined()
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: { ...BAND, maxRows: 60 } })
+  expect(await band.find({ type: 'Text', text: /Run the e2e suite/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'background' })).toBeUndefined()
   expect(await band.find({ type: 'Text', text: '\uea85 ' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /waiting for output/ })).toBeDefined()
+})
+
+test('full background cards remain available by explicit preference', async ($, on) => {
+  mock.env(on, { SHELLCAST_BACKGROUND: 'cards' })
+  await startBackground($, on)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
+  expect(await band.find({ type: 'Text', text: 'background' })).toBeDefined()
+})
+
+test('the compact band caps visible jobs and reserves room for overflow', async ($, on) => {
+  mock.env(on, {})
+  await startBackgrounds($, on, ['b1', 'b2', 'b3', 'b4', 'b5'])
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: { ...BAND, maxRows: 60 } })
+  expect(await band.find({ type: 'Text', text: /Job b3/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /Job b4/ })).toBeUndefined()
+  expect(await band.find({ type: 'Text', text: '  +2 more in the background' })).toBeDefined()
+  await band.redraw({ ...BAND, maxRows: 3 })
+  expect(await band.find({ type: 'Text', text: /Job b3/ })).toBeUndefined()
+  expect(await band.find({ type: 'Text', text: '  +3 more in the background' })).toBeDefined()
+  await band.redraw({ ...BAND, maxRows: 0 })
+  expect(await band.find({ type: 'Text' })).toBeUndefined()
+})
+
+test('engine task snapshots remove ghosts while preserving quiet running shells', async ($, on) => {
+  mock.env(on, {})
+  const ids = await startBackgrounds($, on, ['b1', 'b2', 'b3', 'b4', 'b5'])
+  await $.classic.Stop({ stop_hook_active: false, background_tasks: [
+    { id: 'b4', type: 'shell', status: 'running', description: 'Quiet job' },
+    { id: 'b5', type: 'shell', status: 'running', description: 'Other job' },
+    { id: 'agent1', type: 'subagent', status: 'running', description: 'Agent' },
+  ] })
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
+  expect(await band.find({ type: 'Text', text: /Job b1/ })).toBeUndefined()
+  expect(await band.find({ type: 'Text', text: /Job b4/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /Job b5/ })).toBeDefined()
+  const row = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', requestId: ids[0], viewport: VIEWPORT,
+    props: call({ tool_use_id: ids[0], output: { backgroundTaskId: 'b1' } }) })
+  expect(await row.find({ type: 'Text', text: /finished · exit unknown/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: '✔ ' })).toBeUndefined()
+  // A late notice refines the unknown result, although the run is no longer active.
+  await $.session.append({ door: 'delivery', origin: { kind: 'task-notification' }, uuid: 'late-completion', message: { type: 'user', content: [{ type: 'text', text:
+    '<task-notification><task-id>b1</task-id><status>failed</status><summary>exit code 2</summary></task-notification>',
+  }] } })
+  await row.redraw(call({ tool_use_id: ids[0], output: { backgroundTaskId: 'b1' } }))
+  expect(await row.find({ type: 'Text', text: /background · exit 2/ })).toBeDefined()
+  await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
+  await band.redraw(BAND)
+  expect(await band.find({ type: 'Text' })).toBeUndefined()
+})
+
+test('missing or subagent snapshots do not retire the main session shells', async ($, on) => {
+  mock.env(on, {})
+  await startBackground($, on)
+  await $.classic.Stop({ stop_hook_active: false })
+  await $.classic.Stop({ stop_hook_active: false, agent_id: 'agent1', background_tasks: [] })
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
+  expect(await band.find({ type: 'Text', text: /Run the e2e suite/ })).toBeDefined()
+})
+
+test('the footer describes one job and counts the rest', () => {
+  const shells = ['One', 'Two', 'Three'].map(title => ({ title, command: 'sleep 100', run: BLANK }))
+  expect(footerTail(shells)).toBe('→ One · +2 more')
 })
 
 test('in the transcript it stays one row that points at the pinned card', async ($, on) => {

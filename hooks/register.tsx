@@ -6,7 +6,7 @@ import type { BashInput, BashOutput, Card, Pinned } from './card'
 import { countLines, parseNotifications } from './format'
 import { canCollapseGroup, drawGroup } from './group'
 import { iconMode } from './icons'
-import { BLANK, begin, connect, connected, end, ensureTicker, settle, textOf } from './live'
+import { BLANK, begin, connect, connected, end, ensureTicker, reconcile, settle, textOf } from './live'
 
 const runs = atom({ plugin: 'shellcast', key: 'runs' } as const, BLANK)
 const expanded = atom({ plugin: 'shellcast', key: 'expanded' } as const, false)
@@ -89,6 +89,16 @@ export const register: Register = on => {
     return ran
   })
 
+  // A retained output file does not prove its process is alive. Reconcile
+  // against the same engine task registry that supplies the native shell count.
+  on('classic.Stop', async ($, e, next) => {
+    const io = connected()
+    if (io !== undefined && e.agent_id === undefined && e.background_tasks !== undefined) {
+      await reconcile(io, e.background_tasks)
+    }
+    return next(e)
+  })
+
   // A background shell's end arrives as a <task-notification> row.
   on('session.append', async ($, e, next) => {
     const io = connected()
@@ -166,7 +176,7 @@ export const register: Register = on => {
     return <Box flexDirection="column">{summary}{await unfold()}</Box>
   })
 
-  // A background shell's live card stays pinned above the prompt while it
+  // A background shell's live row stays pinned above the prompt while it
   // runs, so it never scrolls away as the agent keeps writing; the footer's
   // "1 shell" says what it is doing too (it stays when the band is collapsed).
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -176,9 +186,10 @@ export const register: Register = on => {
     const { Box } = $.ui.resolve(e)
     const below = await next(e)
     const icons = iconMode(await $.env.get('SHELLCAST_ICONS'))
+    const layout = await $.env.get('SHELLCAST_BACKGROUND') === 'cards' ? 'cards' : 'compact'
     return (
       <Box flexDirection="column">
-        {drawPinned($.ui.resolve(e), shells, e.props.bodyColumns, e.props.maxRows, icons)}
+        {drawPinned($.ui.resolve(e), shells, e.props.bodyColumns, e.props.maxRows, icons, layout)}
         {below}
       </Box>
     )
