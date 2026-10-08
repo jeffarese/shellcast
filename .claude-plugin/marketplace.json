@@ -1,12 +1,12 @@
 {
   "name": "shellcast",
   "owner": { "name": "Jeff Arese" },
-  "metadata": { "description": "Live inline shell command cards for Claude Code." },
+  "metadata": { "description": "Live one-line shell command rows for Claude Code." },
   "plugins": [
     {
       "name": "shellcast",
       "source": "./",
-      "description": "Live inline cards for every shell command Claude runs: streaming output, progress bars, timing and exit status right in the transcript."
+      "description": "Tidy one-line shell command rows with live output, progress, timing and exit status, plus details on demand."
     }
   ]
 }

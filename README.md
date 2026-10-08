@@ -1,6 +1,6 @@
 # shellcast
 
-Live inline cards for every shell command Claude runs, right in the Claude Code transcript. No side panel.
+Live one-line rows for every shell command Claude runs, right in the Claude Code transcript. No side panel.
 
 I got tired of my agent's shells being reduced to this:
 
@@ -8,7 +8,7 @@ I got tired of my agent's shells being reduced to this:
   <img src="assets/before.png" alt="Claude Code's footer: auto mode on · 1 shell, 2 monitors · 1 agent" width="560">
 </p>
 
-What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live card, and keeps long background jobs in sight while the agent goes on writing. Quick commands stay as one-line rows with their own icons. Completed tool blocks collapse into a summary of the work and an icon strip, keeping the whole sequence easy to scan:
+What is that shell doing? Is it stuck? How far along is it? shellcast puts every shell command Claude runs right in the transcript as a live row, and keeps long background jobs in sight while the agent goes on writing. Commands stay as one-line rows with their own icons, however long they run. Completed tool blocks collapse into a summary of the work and an icon strip, keeping the whole sequence easy to scan:
 
 <p align="center">
   <strong>Stock Claude Code (left) · shellcast (right)</strong><br>
@@ -19,7 +19,7 @@ What is that shell doing? Is it stuck? How far along is it? shellcast puts every
 
 <p align="center"><sub>Open the <a href="assets/side-by-side.mp4">full-size comparison</a>, individual <a href="assets/before.mp4">before</a> / <a href="assets/after.mp4">after</a> videos, or the <a href="assets/compact-writes.mp4">short icons + writes demo</a>.</sub></p>
 
-While a command is running you can see its output, progress and throughput. Once it finishes, the card folds into a single line:
+Commands stay on one line from start to finish, with live output, reported progress and elapsed time while running. They never automatically expand into a card; use `▸ details` when you want more:
 
 ```
 ✔ ⚗ Run the test suite  ⎿ Tests  73 passed (73)              5.3s · 13 lines  ▸ details
@@ -41,8 +41,8 @@ Answer `y` to add the marketplace, then pick a scope (user scope loads it in eve
 
 | State | Card |
 | --- | --- |
-| **Starting** | A quiet one-line row with a spinner. Commands that finish within about 1.5 s never open a card, so quick `ls` and `git status` calls don't flash. |
-| **Running** | Framed card: spinner, elapsed time, syntax-highlighted command, the last 3 output lines as they stream (always 3 rows, so it doesn't grow as output arrives), and a meter below them. The meter is a real progress bar when the output prints `45%` or `[3/10]`, and a shimmer otherwise. Under it: bytes, lines, a throughput sparkline, and a timeout warning past half the limit. |
+| **Starting** | A quiet one-line row with a spinner. |
+| **Running** | Always a compact row: spinner, title, latest output in fullscreen, reported progress, elapsed time and a timeout warning past half the limit. Long-running commands stay on one line too; command and output details open only when requested. |
 | **Done** | A one-liner: `✔`, the description, the last line of output (the command, on the main screen), duration and line count. Chips appear for git commits, pushes and PRs, edited files, saved output, unsandboxed runs and timeouts. |
 | **Completed block** | Consecutive successful tools collapse into a description such as `✔ Searched for 1 pattern, read 1 file, ran 7 shell commands`, followed by their icons and elapsed time when observed. Repeated icons get a count. Long summaries wrap to keep the description and icons visible. In fullscreen, `▸ details` restores the individual rows; each shell still has its own output toggle. Active blocks, failures, interruptions and pending results stay visible. |
 | **Failed** | The same one-liner in red, with `✘` and the exit code. A call you declined shows as `⊘ not run`, not as a failure. |

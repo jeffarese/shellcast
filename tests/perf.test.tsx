@@ -97,7 +97,7 @@ const SCENARIOS = {
   'done · fullscreen, open': () => drawCard(card({ ownsOutput: true, toggle, isOpen: true }), props({ output: done })),
   'failed · fullscreen': () => drawCard(card({ ownsOutput: true, toggle }), props({ isErrored: true, output: failed })),
   'interrupted · main screen': () => drawCard(card(), props({ isInterrupted: true })),
-  'running · live card': () => drawCard(card({ run: run(), ownsOutput: true, toggle }), props({ isRunning: true })),
+  'running · compact row': () => drawCard(card({ run: run(), ownsOutput: true, toggle }), props({ isRunning: true })),
   'background · transcript row': () =>
     drawCard(card({ run: run({ background: { taskId: 'b1', status: 'running' } }) }), props({ output: { backgroundTaskId: 'b1' } })),
   'band · icons off': () => drawPinned(els, shells, 120, 40, 'none'),
@@ -114,7 +114,7 @@ const BUDGET: Record<keyof typeof SCENARIOS, number> = {
   'done · fullscreen, open': 157,
   'failed · fullscreen': 13,
   'interrupted · main screen': 11,
-  'running · live card': 33,
+  'running · compact row': 13,
   'background · transcript row': 11,
   'band · icons off': 28,
   'band · 3 pinned shells': 31,

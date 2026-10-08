@@ -51,13 +51,10 @@ export type BashOutput = {
   bashEditDiff?: { files?: { filePath: string }[]; moreFiles?: number }
 }
 
-const LIVE_LINES = 3
 const BACKGROUND_LINES = 3
 const DONE_LINES = 2
 const FAILED_LINES = 8
 const DETAIL_LINES = 40
-/** How long a shell runs as a compact row before it opens into a live card. */
-export const LONG_RUNNING_MS = 1500
 
 type Chip = { text: string; color: string }
 
@@ -293,20 +290,17 @@ function Details(card: Card, output: BashOutput | undefined, errorText: string |
 }
 
 function Running(card: Card): RenderElement {
-  const { Box, Text } = card.els
   const { run } = card
-  const tail = run.tail.slice(card.isOpen ? -20 : -LIVE_LINES)
   const elapsed = elapsedOf(run)
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor="bashBorder" paddingX={1}>
-      {Header(card, SPINNER[run.ticks % SPINNER.length] ?? '⠋', 'claude', [
-        <Text color="claude">{elapsed === undefined ? 'running' : duration(elapsed)}</Text>,
-      ])}
-      {CommandLine(card, card.isOpen)}
-      {card.isOpen ? OutputLines(card, tail, 'bashBorder') : LiveLines(card, tail, LIVE_LINES, 'bashBorder')}
-      {Meter(card)}
-      {Stats(card, false)}
-    </Box>
+  const progress = detectProgress(run.tail)
+  const meta = ['running', progress?.label, elapsed === undefined ? undefined : duration(elapsed)]
+    .filter(part => part !== undefined).join(' · ')
+  const chips: Chip[] = elapsed !== undefined && elapsed > run.timeoutMs / 2
+    ? [{ text: `⏱ times out in ${duration(Math.max(0, run.timeoutMs - elapsed))}`, color: 'warning' }]
+    : []
+  return Compact(
+    card, SPINNER[run.ticks % SPINNER.length] ?? '⠋', 'claude', meta,
+    run.tail.slice(-1), chips, () => Details(card, undefined, undefined),
   )
 }
 
@@ -336,8 +330,8 @@ function BackgroundLive(card: Card, taskId: string): RenderElement {
 }
 
 /**
- * A finished shell as one line: glyph, what it was for, the gist of how it
- * ended (its last output line, else its command), chips and timing. Details
+ * A shell as one line: glyph, what it is for, its latest output line (or
+ * its command), chips and timing. Details
  * open the rest; on the main screen the engine's result block follows.
  */
 function Compact(
@@ -406,16 +400,8 @@ export type ToolUseProps = {
 export function drawCard(card: Card, props: ToolUseProps): RenderElement {
   const { run } = card
   if (props.isRunning) {
-    // A quick command stays one compact row from start to finish, so nothing
-    // flashes open and shut; only a shell still running after a moment opens.
-    // Timed from the process's own start once its output file appears; the
-    // call's start also counts the engine's checks before it spawns.
-    const isLong = run.spawnedAt !== undefined
-      ? run.now - run.spawnedAt >= LONG_RUNNING_MS
-      : run.startedAt !== 0 && run.now - run.startedAt >= LONG_RUNNING_MS * 3
-    if (isLong) return Running(card)
-    const spinner = SPINNER[run.ticks % SPINNER.length] ?? '⠋'
-    return Compact(card, spinner, 'claude', 'running', [], [], null)
+    // Running time never expands a row; only the explicit details toggle does.
+    return Running(card)
   }
 
   if (props.isInterrupted) {

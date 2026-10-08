@@ -45,7 +45,7 @@ test('a call the model is still writing is pending, not finished', async ($, on)
   expect(await ui.find({ type: 'Text', text: /\$/ })).toBeUndefined()
 })
 
-test('a shell still running after a moment opens into the live card', async ($, on) => {
+test('long-running shells stay compact and only expand when details are requested', async ($, on) => {
   mock.env(on, {})
   const clock = mock.clock(on, { now: 1_000 })
   on('session.start', () => ({ cwd: '/work' }))
@@ -59,8 +59,7 @@ test('a shell still running after a moment opens into the live card', async ($, 
   })
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   const running = $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run unit tests' })
-  // No output file here, so the card opens on the call's own clock: 3x the threshold.
-  await clock.advance(5_000)
+  await clock.advance(90_000)
   const ui = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
@@ -69,8 +68,14 @@ test('a shell still running after a moment opens into the live card', async ($, 
     viewport: VIEWPORT,
     props: call({ tool_use_id: id, isRunning: true }),
   })
-  expect(await ui.find({ type: 'Text', text: /waiting for output/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /waiting for output/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'running · 1m 30s' })).toBeDefined()
+  expect(await ui.find({ type: 'Code' })).toBeUndefined()
   expect(await ui.find({ type: 'Button', key: 'details' })).toBeDefined()
+  await ui.press({ key: 'details' })
+  expect(await ui.find({ type: 'Code' })).toBeDefined()
+  await ui.press({ key: 'details' })
+  expect(await ui.find({ type: 'Code' })).toBeUndefined()
   finish()
   expect((await running).deny).toBeUndefined()
 })
