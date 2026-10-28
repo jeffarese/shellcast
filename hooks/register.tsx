@@ -1,7 +1,7 @@
 import { atom, memberOf, read, update } from 'claude-code'
 import type { BuiltinToolResults, Register } from 'claude-code'
 
-import { drawCard, drawPinned, footerTail } from './card'
+import { drawCard, drawPinned, footerTail, rowHoldsResult } from './card'
 import type { BashInput, BashOutput, Card, Pinned } from './card'
 import { countLines, parseNotifications } from './format'
 import { canCollapseGroup, drawGroup } from './group'
@@ -124,7 +124,10 @@ export const register: Register = on => {
     if (e.surface !== 'terminal') return next(e)
     const input = (typeof e.props.input === 'object' && e.props.input !== null ? e.props.input : {}) as BashInput
     const command = input.command ?? ''
-    const ownsOutput = e.viewport?.isFullscreen === true
+    const isFullscreen = e.viewport?.isFullscreen === true
+    // An unfolded group's rows have no result block beneath: they end in their
+    // last output line whatever happened, as a call that ended well always does.
+    const ownsOutput = isFullscreen || e.props.isRunning || e.props.isExpanded === true || rowHoldsResult(e.props.output, e.props.isErrored)
     const card: Card = {
       els: $.ui.resolve(e),
       title: input.description?.trim() || command.split('\n')[0] || 'Shell',
@@ -133,16 +136,19 @@ export const register: Register = on => {
       run: await read($, memberOf(runs, e)),
       columns: e.viewport?.columns ?? 100,
       isOpen: await read($, memberOf(expanded, e)),
-      toggle: ownsOutput ? () => update($, memberOf(expanded, e), open => !open) : undefined,
+      toggle: isFullscreen ? () => update($, memberOf(expanded, e), open => !open) : undefined,
       ownsOutput,
     }
     return drawCard(card, e.props)
   })
 
   // In fullscreen the card draws the output itself; the engine's block would
-  // repeat it. On the main screen the engine's block stays (ctrl+o expands it).
+  // repeat it. On the main screen the card's row ends in the last output line
+  // of a call that ended well, so the block goes there too; a failure keeps
+  // it, and ctrl+o always shows it in full.
   on('ui.render', { component: 'ToolResult', props: { tool: 'Bash' } }, ($, e, next) => {
-    if (e.surface !== 'terminal' || e.viewport?.isFullscreen !== true) return next(e)
+    if (e.surface !== 'terminal' || e.props.isExpanded === true) return next(e)
+    if (e.viewport?.isFullscreen !== true && !rowHoldsResult(e.props.output, e.props.isErrored)) return next(e)
     const { Box } = $.ui.resolve(e)
     return <Box />
   })

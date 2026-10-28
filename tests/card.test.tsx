@@ -204,25 +204,73 @@ test('in fullscreen the card owns the output and the engine block is hidden', as
   expect(await ui.find({ type: 'Text' })).toBeUndefined()
 })
 
-test('on the main screen the engine keeps its result block and the card no tail', async ($, on) => {
-  mock.env(on, {})
+const MAIN = { columns: 100, rows: 40, isFullscreen: false }
+
+function engineResult(on: Parameters<TestBody>[1]) {
   on('ui.render', { component: 'ToolResult' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine result</Text>
   })
-  const MAIN = { columns: 100, rows: 40, isFullscreen: false }
+}
+
+test('on the main screen a call that ended well is one row ending in its last output line', async ($, on) => {
+  mock.env(on, {})
+  engineResult(on)
   const result = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolResult', viewport: MAIN, props: RESULT })
-  expect(await result.find({ type: 'Text', text: 'engine result' })).toBeDefined()
+  expect(await result.find({ type: 'Text' })).toBeUndefined()
   const row = await $.ui.mount({
     plugin: PLUGIN,
     surface: 'terminal',
     component: 'ToolUse',
     viewport: MAIN,
-    props: call({ output: { stdout: 'only line\n', stderr: '', interrupted: false } }),
+    props: call({ output: { stdout: 'first line\nlast line\n\n', stderr: '', interrupted: false } }),
   })
-  expect(await row.find({ type: 'Text', text: '1 line' })).toBeDefined()
-  expect(await row.find({ type: 'Text', text: 'only line' })).toBeUndefined()
+  expect(await row.find({ type: 'Text', text: '⎿ last line' })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /first line/ })).toBeUndefined()
+  expect(await row.find({ type: 'Text', text: /3 lines/ })).toBeDefined()
   expect(await row.find({ type: 'Button' })).toBeUndefined()
+})
+
+test('a background call on the main screen is one row; its live card is pinned', async ($, on) => {
+  mock.env(on, {})
+  engineResult(on)
+  const result = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolResult', viewport: MAIN,
+    props: { ...RESULT, output: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b7' } } })
+  expect(await result.find({ type: 'Text' })).toBeUndefined()
+})
+
+test('on the main screen failures, images, edits and ctrl+o keep the engine block', async ($, on) => {
+  mock.env(on, {})
+  engineResult(on)
+  for (const props of [
+    { ...RESULT, isErrored: true, output: 'Exit code 1\nboom' },
+    { ...RESULT, output: { stdout: '', stderr: '', interrupted: true } },
+    { ...RESULT, output: { stdout: 'data:image/png;base64,AAAA', stderr: '', interrupted: false, isImage: true } },
+    { ...RESULT, output: { stdout: '', stderr: '', interrupted: false, bashEditDiff: { files: [{ filePath: 'a.ts', hunks: [] }], moreFiles: 0 } } },
+    { ...RESULT, isExpanded: true },
+  ]) {
+    const result = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolResult', viewport: MAIN, props })
+    expect(await result.find({ type: 'Text', text: 'engine result' })).toBeDefined()
+  }
+  const failed = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: MAIN,
+    props: call({ isErrored: true, output: 'Exit code 1\nboom' }) })
+  expect(await failed.find({ type: 'Text', text: 'exit 1' })).toBeDefined()
+  expect(await failed.find({ type: 'Text', text: /boom/ })).toBeUndefined()
+})
+
+test('an unfolded group row has no block beneath, so it shows its last line even when it failed', async ($, on) => {
+  mock.env(on, {})
+  const row = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: MAIN,
+    props: call({ isExpanded: true, isErrored: true, output: 'Exit code 2\nFAIL src/a.test.ts\nexpected 1 got 2' }) })
+  expect(await row.find({ type: 'Text', text: 'exit 2' })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: '⎿ expected 1 got 2' })).toBeDefined()
+})
+
+test('a running call on the main screen shows its newest output line', async ($, on) => {
+  mock.env(on, {})
+  const row = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: MAIN,
+    props: call({ isRunning: true }) })
+  expect(await row.find({ type: 'Text', text: /npm test/ })).toBeDefined()
 })
 
 test('other surfaces keep their own rows', async ($, on) => {

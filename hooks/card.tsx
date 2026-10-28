@@ -68,9 +68,10 @@ export type Card = {
   isOpen: boolean
   toggle: (() => unknown) | undefined
   /**
-   * Whether the card draws the call's output itself (the fullscreen layout,
-   * where rows redraw) or leaves it to the engine's own result block (the
-   * main screen, where finished rows are printed once and ctrl+o expands).
+   * Whether the card draws the call's output itself: always in fullscreen,
+   * where rows redraw; on the main screen while the call runs, in an
+   * unfolded group, and once it ended well (rowHoldsResult). Otherwise the
+   * engine's own result block shows it, and ctrl+o expands either.
    */
   ownsOutput: boolean
 }
@@ -335,8 +336,8 @@ function BackgroundLive(card: Card, taskId: string): RenderElement {
 
 /**
  * A shell as one line: glyph, what it is for, its latest output line (or
- * its command), chips and timing. Details
- * open the rest; on the main screen the engine's result block follows.
+ * its command), chips and timing. Details open the rest; where the card
+ * does not own the output, the engine's result block follows.
  */
 function Compact(
   card: Card,
@@ -349,7 +350,7 @@ function Compact(
   metaColor?: string,
 ): RenderElement {
   const { Box, Text } = card.els
-  const gist = card.ownsOutput ? lines[lines.length - 1]?.trim() : undefined
+  const gist = card.ownsOutput ? lines.map(line => line.trim()).filter(line => line !== '').at(-1) : undefined
   const firstLine = commandLabel(card.command)
   const subtitle = gist !== undefined && gist !== '' ? `⎿ ${gist}` : firstLine !== '' ? `$ ${firstLine}` : undefined
   const right: RenderNode[] = [
@@ -391,6 +392,17 @@ function metaOf(run: ShellRun, lines: number, prefix: string[] = []): string {
   if (elapsed !== undefined) parts.push(duration(elapsed))
   parts.push(lines === 0 ? 'no output' : `${lines} line${lines === 1 ? '' : 's'}`)
   return parts.join(' · ')
+}
+
+/**
+ * Whether a call's row says all its result block would: one that ran and
+ * ended well, or went to the background. A failure, an interrupt, an image or
+ * an edit's diff keeps the engine's block, which shows those best.
+ */
+export function rowHoldsResult(output: unknown, isErrored: boolean): boolean {
+  if (isErrored || typeof output !== 'object' || output === null) return false
+  const result = output as BashOutput
+  return !result.interrupted && !result.isImage && (result.bashEditDiff?.files?.length ?? 0) === 0
 }
 
 export type ToolUseProps = {
