@@ -3,10 +3,10 @@ import type { BuiltinToolResults, Register } from 'claude-code'
 
 import { drawCard, drawPinned, footerTail, rowHoldsResult } from './card'
 import type { BashInput, BashOutput, Card, Pinned } from './card'
-import { countLines, parseNotifications } from './format'
+import { countLines } from './format'
 import { canCollapseGroup, drawGroup } from './group'
 import { iconMode } from './icons'
-import { BLANK, begin, connect, connected, end, ensureTicker, reconcile, settle, textOf } from './live'
+import { BLANK, appendSeen, begin, connect, connected, end, ensureTicker, reconcile, settle, settleNotices, textOf } from './live'
 
 const runs = atom({ plugin: 'shellcast', key: 'runs' } as const, BLANK)
 const expanded = atom({ plugin: 'shellcast', key: 'expanded' } as const, false)
@@ -44,12 +44,6 @@ export const register: Register = on => {
       stat: path => $.fs.stat(path),
       read: path => $.fs.read(path),
       messages: () => $.session.messages(),
-      // lsof exits 1 with nothing printed when no process has the file open.
-      isHeld: async path => {
-        const ran = await $.process.run(['lsof', '-t', '-w', '--', path], { timeoutMs: 3000 })
-        if (ran.exitCode === 0 && ran.stdout.trim() !== '') return true
-        return ran.exitCode === 1 && ran.stdout.trim() === '' && ran.stderr.trim() === '' ? false : undefined
-      },
       every: (ms, fn) => $.clock.every(ms, fn),
       log: text => $.ui.log(text, { to: 'debug' }),
       getRun: id => read($, memberOf(runs, { requestId: id })),
@@ -98,7 +92,6 @@ export const register: Register = on => {
 
   // A retained output file does not prove its process is alive. Reconcile
   // against the same engine task registry that supplies the native shell count.
-  // Where a plugin above skips this, the ticker checks who holds the file.
   on('classic.Stop', async ($, e, next) => {
     const io = connected()
     if (io !== undefined && e.agent_id === undefined && e.background_tasks !== undefined) {
@@ -107,15 +100,15 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A background shell's end arrives as a <task-notification> row. The ticker
-  // also reads these from the transcript, for when a plugin above skips this.
+  // A background shell's end arrives as a <task-notification> row. Until this
+  // hook first runs, the ticker reads them from the transcript instead, for a
+  // plugin above may be sending the event on past it.
   on('session.append', async ($, e, next) => {
+    appendSeen()
     const io = connected()
     if (io !== undefined && e.door !== 'response' && e.door !== 'tool-result' && e.door !== 'compaction') {
       const text = textOf(e.message.content)
-      if (text.includes('<task-notification>')) {
-        for (const note of parseNotifications(text)) await settle(io, note).catch(() => undefined)
-      }
+      if (text.includes('<task-notification>')) await settleNotices(io, text)
     }
     return next(e)
   })
@@ -125,9 +118,13 @@ export const register: Register = on => {
     const input = (typeof e.props.input === 'object' && e.props.input !== null ? e.props.input : {}) as BashInput
     const command = input.command ?? ''
     const isFullscreen = e.viewport?.isFullscreen === true
-    // An unfolded group's rows have no result block beneath: they end in their
-    // last output line whatever happened, as a call that ended well always does.
-    const ownsOutput = isFullscreen || e.props.isRunning || e.props.isExpanded === true || rowHoldsResult(e.props.output, e.props.isErrored)
+    // A call that ended well ends its row in its last output line, and its
+    // result block is left out. An expanded failure does too: a group this
+    // plugin unfolded draws no block under its rows, so it would show no error
+    // (in the ctrl+o transcript, its block repeats that one line).
+    const isExpanded = e.props.isExpanded === true
+    const ownsOutput = isFullscreen || e.props.isRunning
+      || (isExpanded ? e.props.isErrored : rowHoldsResult(e.props.output, e.props.isErrored))
     const card: Card = {
       els: $.ui.resolve(e),
       title: input.description?.trim() || command.split('\n')[0] || 'Shell',
@@ -142,13 +139,14 @@ export const register: Register = on => {
     return drawCard(card, e.props)
   })
 
-  // In fullscreen the card draws the output itself; the engine's block would
-  // repeat it. On the main screen the card's row ends in the last output line
-  // of a call that ended well, so the block goes there too; a failure keeps
-  // it, and ctrl+o always shows it in full.
+  // In fullscreen the card draws the output itself (its details hold it all);
+  // the engine's block would repeat it. On the main screen the card's row ends
+  // in the last output line of a call that ended well, so the block goes there
+  // too; a failure keeps it, and ctrl+o shows every block in full.
   on('ui.render', { component: 'ToolResult', props: { tool: 'Bash' } }, ($, e, next) => {
-    if (e.surface !== 'terminal' || e.props.isExpanded === true) return next(e)
-    if (e.viewport?.isFullscreen !== true && !rowHoldsResult(e.props.output, e.props.isErrored)) return next(e)
+    if (e.surface !== 'terminal') return next(e)
+    const isFullscreen = e.viewport?.isFullscreen === true
+    if (!isFullscreen && (e.props.isExpanded === true || !rowHoldsResult(e.props.output, e.props.isErrored))) return next(e)
     const { Box } = $.ui.resolve(e)
     return <Box />
   })

@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { MockClock, TestBody } from 'claude-code/testing'
 import { footerTail } from '../hooks/card'
-import { BLANK, PROBE_MS, SWEEP_MS, TICK_MS } from '../hooks/live'
+import { BLANK, SWEEP_MS, TICK_MS } from '../hooks/live'
 
 const PLUGIN = 'shellcast'
 const VIEWPORT = { columns: 100, rows: 40, isFullscreen: true }
@@ -266,6 +266,19 @@ test('an unfolded group row has no block beneath, so it shows its last line even
   expect(await row.find({ type: 'Text', text: '⎿ expected 1 got 2' })).toBeDefined()
 })
 
+test('ctrl+o never shows a call\'s output twice', async ($, on) => {
+  mock.env(on, {})
+  engineResult(on)
+  // Fullscreen: the card's details hold the output, so the block stays hidden.
+  const full = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolResult', viewport: VIEWPORT, props: { ...RESULT, isExpanded: true } })
+  expect(await full.find({ type: 'Text' })).toBeUndefined()
+  // Main screen: the block is drawn in full, so the row keeps its command.
+  const row = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: MAIN,
+    props: call({ isExpanded: true, output: { stdout: 'only line\n', stderr: '', interrupted: false } }) })
+  expect(await row.find({ type: 'Text', text: /only line/ })).toBeUndefined()
+  expect(await row.find({ type: 'Text', text: /\$ npm test/ })).toBeDefined()
+})
+
 test('a running call on the main screen shows its newest output line', async ($, on) => {
   mock.env(on, {})
   const row = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: MAIN,
@@ -427,41 +440,66 @@ test('a notice that never reached the append hook is read from the transcript', 
   expect(await row.find({ type: 'Text', text: /background · exit 2/ })).toBeDefined()
   // The same notice again, through the hook, changes nothing.
   await $.session.append({ door: 'delivery', origin: { kind: 'task-notification' }, uuid: 'again', message: { type: 'user', content: [{ type: 'text', text:
-    '<task-notification><task-id>b1</task-id><status>completed</status><summary>exit code 0</summary></task-notification>',
+    '<task-notification><task-id>b1</task-id><status>failed</status><summary>exit code 2</summary></task-notification>',
   }] } })
   await row.redraw(call({ tool_use_id: ids[0], output: { backgroundTaskId: 'b1' } }))
   expect(await row.find({ type: 'Text', text: /background · exit 2/ })).toBeDefined()
 })
 
-test('a quiet shell whose output file nobody holds has ended', async ($, on) => {
-  mock.env(on, { CLAUDE_CODE_TMPDIR: '/tmp' })
+const notice = (taskId: string, status: string, code?: number) => ({ role: 'user' as const, toolUses: [] as [], text:
+  `<task-notification>\n<task-id>${taskId}</task-id>\n<status>${status}</status>${code === undefined ? '' : `<summary>exit code ${code}</summary>`}\n</task-notification>` })
+
+test('the transcript window is read whole, so a full one still yields new notices', async ($, on) => {
+  mock.env(on, {})
   const clock = mock.clock(on, { now: 1_000 })
-  const tasks = '/tmp/claude-501/-work/s1/tasks'
-  const held = new Set(['b1.output', 'b2.output'])
-  on('session.id', () => ({ value: 's1' }))
-  on('session.cwd', () => ({ value: '/work' }))
-  on('session.root', () => ({ value: '/work' }))
-  on('session.messages', () => ({ value: [] }))
-  on('fs.exists', (_, e) => ({ value: e.path === tasks }))
-  on('fs.list', () => ({ value: [] }))
-  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
-  on('process.run', (_, e) => {
-    if (e.argv[0] === 'id') return { value: { exitCode: 0, stdout: '501\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
-    const isHeld = held.has(e.argv.at(-1)!.split('/').at(-1)!)
-    return { value: { exitCode: isHeld ? 0 : 1, stdout: isHeld ? '4242\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
-  })
-  const ids = await startBackgrounds($, on, ['b1', 'b2'], clock)
-  await clock.advance(PROBE_MS)
+  const filler = (n: number) => ({ role: 'assistant' as const, toolUses: [] as [], text: `row ${n}` })
+  // A capped window: its length stays the same as old rows drop out.
+  let rows: { role: 'user' | 'assistant'; text: string; toolUses: [] }[] = [filler(1), filler(2), filler(3)]
+  on('session.messages', () => ({ value: rows }))
+  await startBackgrounds($, on, ['b1'], clock)
+  await clock.advance(SWEEP_MS + TICK_MS)
+  rows = [filler(2), filler(3), notice('b1', 'completed', 0)]
+  await clock.advance(SWEEP_MS + TICK_MS)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
-  expect(await band.find({ type: 'Text', text: /Job b1/ })).toBeDefined()
-  held.delete('b1.output')
-  await clock.advance(PROBE_MS + TICK_MS)
-  await band.redraw(BAND)
-  expect(await band.find({ type: 'Text', text: /Job b1/ })).toBeUndefined()
-  expect(await band.find({ type: 'Text', text: /Job b2/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /Job b1|Run the e2e suite/ })).toBeUndefined()
+})
+
+test('a notice quoted inside another message does not end a shell', async ($, on) => {
+  mock.env(on, {})
+  const clock = mock.clock(on, { now: 1_000 })
+  const quoted = notice('b1', 'completed', 0)
+  on('session.messages', () => ({ value: [{ ...quoted, text: `Here is the log:\n${quoted.text}` }] }))
+  await startBackgrounds($, on, ['b1'], clock)
+  await clock.advance(2 * SWEEP_MS + TICK_MS)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', viewport: VIEWPORT, props: BAND })
+  expect(await band.find({ type: 'Text', text: /Run the e2e suite/ })).toBeDefined()
+})
+
+test('once the append hook has run, the transcript is not read', async ($, on) => {
+  mock.env(on, {})
+  const clock = mock.clock(on, { now: 1_000 })
+  let reads = 0
+  on('session.messages', () => {
+    reads += 1
+    return { value: [] }
+  })
+  await startBackgrounds($, on, ['b1'], clock)
+  await $.session.append({ door: 'delivery', origin: { kind: 'task-notification' }, uuid: 'other', message: { type: 'user', content: [{ type: 'text', text: 'hello' }] } })
+  await clock.advance(3 * SWEEP_MS)
+  expect(reads).toBe(0)
+})
+
+test('a real exit after TaskStop replaces the guess that it was killed', async ($, on) => {
+  mock.env(on, {})
+  on('tool.call', { tool: 'TaskStop' }, () => ({ result: { message: 'stopped', task_id: 'b42', task_type: 'local_bash' } }))
+  const ids = [await startBackground($, on)]
+  await $.tool.call({ tool: 'TaskStop', task_id: 'b42' })
   const row = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', requestId: ids[0], viewport: VIEWPORT,
-    props: call({ tool_use_id: ids[0], output: { backgroundTaskId: 'b1' } }) })
-  expect(await row.find({ type: 'Text', text: /finished · exit unknown/ })).toBeDefined()
+    props: call({ tool_use_id: ids[0], output: { backgroundTaskId: 'b42' } }) })
+  expect(await row.find({ type: 'Text', text: /stopped/ })).toBeDefined()
+  await $.session.append({ door: 'delivery', origin: { kind: 'task-notification' }, uuid: 'late', message: { type: 'user', content: [{ type: 'text', text: notice('b42', 'completed', 0).text }] } })
+  await row.redraw(call({ tool_use_id: ids[0], output: { backgroundTaskId: 'b42' } }))
+  expect(await row.find({ type: 'Text', text: /background · exit 0/ })).toBeDefined()
 })
 
 test('the footer describes one job and counts the rest', () => {
