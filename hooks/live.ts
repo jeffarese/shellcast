@@ -6,7 +6,7 @@
 import type { FsEntry, FsStat, Timer } from 'claude-code'
 
 import type { ShellRun } from '../types'
-import { countLines, projectSlug, tailLines } from './format'
+import { countLines, parseNotifications, projectSlug, tailLines } from './format'
 import type { Notification } from './format'
 
 /** What the tracker needs from the engine, bound to `$` by the hooks module. */
@@ -21,6 +21,10 @@ export type Io = {
   exists: (path: string) => Promise<boolean>
   stat: (path: string) => Promise<FsStat>
   read: (path: string) => Promise<string>
+  /** The main conversation's rows, oldest first. */
+  messages: () => Promise<readonly { role: string; text: string }[]>
+  /** Whether any process holds the file open; undefined when that can't be told. */
+  isHeld: (path: string) => Promise<boolean | undefined>
   every: (ms: number, fn: () => void) => Timer
   log: (text: string) => void
   getRun: (id: string) => Promise<ShellRun>
@@ -35,6 +39,8 @@ export const DEFAULT_TIMEOUT_MS = 120_000
 export const READ_WHOLE_BYTES = 256 * 1024
 const KEEP_LINES = 40
 const RATE_SAMPLES = 24
+export const SWEEP_MS = 2_000
+export const PROBE_MS = 10_000
 
 export const BLANK: ShellRun = {
   startedAt: 0,
@@ -59,6 +65,10 @@ const claimed = new Set<string>()
 // Keep the owner after unpinning: a delayed completion notice can still supply
 // the real exit status after an engine snapshot only told us it stopped running.
 const taskOwners = new Map<string, string>()
+// How far the transcript has been read for notices, and when it last was.
+let readRows = 0
+let lastSweepAt = 0
+const lastProbeAt = new Map<string, number>()
 
 export function connect(next: Io) {
   io = next
@@ -189,11 +199,53 @@ async function tick(io: Io) {
       await io.setActive(list => list.filter(id => !finished.includes(id)))
       if (isUnpinning) await io.setPinned(list => list.filter(id => !finished.includes(id)))
     }
+    await watchBackground(io, now)
   } catch (error) {
     io.log(`tick failed: ${String(error)}`)
   } finally {
     isTicking = false
   }
+}
+
+/**
+ * Ends background shells without the engine's events: a plugin running ahead
+ * of this one can send `session.append` and `classic.Stop` on past its hooks.
+ * New `<task-notification>` rows are read from the transcript itself, and a
+ * shell gone quiet whose output file no process holds open has ended.
+ */
+async function watchBackground(io: Io, now: number) {
+  const running: { id: string; run: ShellRun }[] = []
+  for (const id of await io.getActive()) {
+    const run = await io.getRun(id)
+    if (run.background?.status === 'running') running.push({ id, run })
+  }
+  if (running.length === 0) return
+  if (now - lastSweepAt >= SWEEP_MS) {
+    lastSweepAt = now
+    await sweepNotifications(io).catch(error => io.log(`notice sweep failed: ${String(error)}`))
+  }
+  for (const { id, run } of running) {
+    const path = run.file === undefined ? undefined : streamPath(run.file)
+    const isQuiet = run.rates.length >= RATE_SAMPLES && run.rates.every(rate => rate === 0)
+    if (path === undefined || !isQuiet || now - (lastProbeAt.get(id) ?? 0) < PROBE_MS) continue
+    lastProbeAt.set(id, now)
+    if ((await io.getRun(id)).background?.status !== 'running') continue
+    if (await io.isHeld(path).catch(() => undefined) !== false) continue
+    io.log(`${id} no longer holds ${path}`)
+    lastProbeAt.delete(id)
+    await settle(io, { taskId: run.background!.taskId, status: 'finished' })
+  }
+}
+
+async function sweepNotifications(io: Io) {
+  const rows = await io.messages()
+  // Compaction shortens the transcript: read it again; settle skips what ended.
+  if (rows.length < readRows) readRows = 0
+  for (const row of rows.slice(readRows)) {
+    if (row.role !== 'user' || !row.text.includes('<task-notification>')) continue
+    for (const note of parseNotifications(row.text)) await settle(io, note).catch(() => undefined)
+  }
+  readRows = rows.length
 }
 
 export function ensureTicker() {
@@ -255,7 +307,10 @@ export async function settle(io: Io, note: Notification) {
   for (const id of ids) {
     const run = await io.getRun(id)
     if (run.background?.taskId !== note.taskId) continue
-    if (note.status === 'finished' && run.background.status !== 'running') continue
+    // A notice can arrive twice (its event and the transcript): only a running
+    // shell, or one that ended with its exit unknown, takes it.
+    const status = run.background.status
+    if (status !== 'running' && (status !== 'finished' || note.status === 'finished')) continue
     taskOwners.set(note.taskId, id)
     const now = await io.now()
     const path = run.file === undefined ? undefined : streamPath(run.file)

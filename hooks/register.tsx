@@ -43,6 +43,13 @@ export const register: Register = on => {
       exists: path => $.fs.exists(path),
       stat: path => $.fs.stat(path),
       read: path => $.fs.read(path),
+      messages: () => $.session.messages(),
+      // lsof exits 1 with nothing printed when no process has the file open.
+      isHeld: async path => {
+        const ran = await $.process.run(['lsof', '-t', '-w', '--', path], { timeoutMs: 3000 })
+        if (ran.exitCode === 0 && ran.stdout.trim() !== '') return true
+        return ran.exitCode === 1 && ran.stdout.trim() === '' && ran.stderr.trim() === '' ? false : undefined
+      },
       every: (ms, fn) => $.clock.every(ms, fn),
       log: text => $.ui.log(text, { to: 'debug' }),
       getRun: id => read($, memberOf(runs, { requestId: id })),
@@ -91,6 +98,7 @@ export const register: Register = on => {
 
   // A retained output file does not prove its process is alive. Reconcile
   // against the same engine task registry that supplies the native shell count.
+  // Where a plugin above skips this, the ticker checks who holds the file.
   on('classic.Stop', async ($, e, next) => {
     const io = connected()
     if (io !== undefined && e.agent_id === undefined && e.background_tasks !== undefined) {
@@ -99,7 +107,8 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A background shell's end arrives as a <task-notification> row.
+  // A background shell's end arrives as a <task-notification> row. The ticker
+  // also reads these from the transcript, for when a plugin above skips this.
   on('session.append', async ($, e, next) => {
     const io = connected()
     if (io !== undefined && e.door !== 'response' && e.door !== 'tool-result' && e.door !== 'compaction') {
