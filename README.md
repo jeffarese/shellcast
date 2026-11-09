@@ -78,6 +78,16 @@ To keep the preference, add `export SHELLCAST_ICONS=nerd-bold` to your shell con
 
 Labels come from the command, not its description: `sed -n` gets a document and `sed -i` a pencil. Leading directory changes are skipped when another command follows (`cd project && npm test` gets a flask). Detection is best effort for shell scripts; unknown commands get a terminal icon. Icon selection never changes command execution.
 
+### Keeping some tools unfolded
+
+Some tool results are worth reading as they come, such as an MCP server's mail or search results. Name those tools in `SHELLCAST_NO_COLLAPSE`, separated by commas or spaces, with `*` as a wildcard. A block that holds any of them shows each call as its own row with its result, while it runs and after it ends:
+
+```
+SHELLCAST_NO_COLLAPSE='mcp__gmail__*' claude
+```
+
+As with the icons, `env.SHELLCAST_NO_COLLAPSE` in `~/.claude/settings.json` keeps it for every session.
+
 ## How live output works
 
 Claude Code streams each shell's combined output to `<tmp>/claude-<uid>/<project>/<session>/tasks/b<id>.output`. A call claims the first such file that appears after it starts, and a 300 ms ticker reads it while the call runs: ANSI codes stripped, `\r` progress lines collapsed to their latest frame. shellcast only reads that folder. If it can't find it, cards still draw, just without the live tail.

@@ -4,7 +4,7 @@ import type { BuiltinToolResults, Register } from 'claude-code'
 import { drawCard, drawPinned, footerTail, rowHoldsResult } from './card'
 import type { BashInput, BashOutput, Card, Pinned } from './card'
 import { countLines } from './format'
-import { canCollapseGroup, drawGroup } from './group'
+import { canCollapseGroup, drawGroup, keepsOpen, toolPatterns } from './group'
 import { iconMode } from './icons'
 import { BLANK, appendSeen, begin, connect, connected, end, ensureTicker, reconcile, settle, settleNotices, textOf } from './live'
 
@@ -164,11 +164,13 @@ export const register: Register = on => {
   })
 
   // Keep live blocks open; finished ones become a single row of command icons.
+  // Blocks with a tool named in SHELLCAST_NO_COLLAPSE always show their own rows.
   // The engine's own expanded mode (ctrl+o/verbose) always takes precedence.
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     if (e.surface !== 'terminal' || e.props.isExpanded) return next(e)
     const hasShell = e.props.calls.some(call => call.tool === 'Bash')
     const unfold = () => next({ ...e, props: { ...e.props, isExpanded: true } })
+    if (keepsOpen(e.props.calls, toolPatterns(await $.env.get('SHELLCAST_NO_COLLAPSE')))) return unfold()
     if (e.props.isActive || e.props.calls.length < 2) return hasShell ? unfold() : next(e)
     const observed = await Promise.all(e.props.calls.map(call => call.tool === 'Bash' && call.tool_use_id !== undefined
       ? read($, memberOf(runs, { requestId: call.tool_use_id })) : undefined))

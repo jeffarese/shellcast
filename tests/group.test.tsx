@@ -2,7 +2,7 @@ import type { ToolGroupCall } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { canCollapseGroup, groupDuration, groupIcons, groupSummary } from '../hooks/group'
+import { canCollapseGroup, groupDuration, groupIcons, groupSummary, keepsOpen, toolPatterns } from '../hooks/group'
 import { BLANK } from '../hooks/live'
 
 const VIEWPORT = { columns: 100, rows: 40, isFullscreen: true }
@@ -131,4 +131,26 @@ test('group time spans observed shells once, and omits unknown or mixed-tool tim
   expect(groupDuration(calls, [runs[0], BLANK])).toBeUndefined()
   expect(groupDuration([calls[0]!, call('', { tool: 'Read' })], runs)).toBeUndefined()
   expect(groupDuration(calls, [runs[0], { ...runs[1]!, background: { taskId: 'b42', status: 'completed', endedAt: 6000 } }])).toBe(4500)
+})
+
+test('SHELLCAST_NO_COLLAPSE patterns match whole tool names, with * as a wildcard', () => {
+  const gmail = call('', { tool: 'mcp__gmail__mail_search' })
+  expect(toolPatterns(undefined)).toEqual([])
+  expect(keepsOpen([CALLS[0]!, gmail], toolPatterns('mcp__gmail__*'))).toBe(true)
+  expect(keepsOpen([CALLS[0]!, gmail], toolPatterns('Read, mcp__gmail__mail_search'))).toBe(true)
+  expect(keepsOpen([CALLS[0]!, gmail], toolPatterns('mcp__gmail'))).toBe(false)
+  expect(keepsOpen([CALLS[0]!, gmail], toolPatterns('mcp__slack__* WebFetch'))).toBe(false)
+  expect(keepsOpen(CALLS, toolPatterns(''))).toBe(false)
+})
+
+test('a block holding a tool named in SHELLCAST_NO_COLLAPSE keeps its own rows, even while live', async ($, on) => {
+  mock.env(on, { SHELLCAST_NO_COLLAPSE: 'mcp__gmail__*' })
+  native(on)
+  const calls = [call('', { tool: 'mcp__gmail__accounts_list' }), call('', { tool: 'mcp__gmail__mail_search' })]
+  for (const isActive of [false, true]) {
+    const ui = await $.ui.mount({ plugin: 'shellcast', surface: 'terminal', component: 'ToolGroup', viewport: VIEWPORT, props: { ...PROPS, calls, isActive } })
+    expect(await ui.find({ type: 'Text', text: 'expanded 2 rows' })).toBeDefined()
+  }
+  const ui = await $.ui.mount({ plugin: 'shellcast', surface: 'terminal', component: 'ToolGroup', viewport: VIEWPORT, props: PROPS })
+  expect(await ui.find({ type: 'Text', text: 'Ran 4 shell commands' })).toBeDefined()
 })

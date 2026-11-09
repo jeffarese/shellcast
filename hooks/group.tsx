@@ -52,6 +52,20 @@ export function groupSummary(calls: Group['calls']): string {
   return summary.charAt(0).toUpperCase() + summary.slice(1)
 }
 
+/**
+ * Tool names from `SHELLCAST_NO_COLLAPSE`: comma- or space-separated, `*` matching any run of
+ * characters, so `mcp__gmail__*` keeps every Gmail MCP call's own row and result.
+ */
+export function toolPatterns(value: string | undefined): readonly RegExp[] {
+  return (value ?? '').split(/[\s,]+/).filter(Boolean)
+    .map(glob => new RegExp(`^${glob.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`))
+}
+
+/** A block holding a tool the person wants to read stays as the engine draws it. */
+export function keepsOpen(calls: readonly ToolGroupCall[], patterns: readonly RegExp[]): boolean {
+  return patterns.length > 0 && calls.some(call => patterns.some(pattern => pattern.test(call.tool)))
+}
+
 /** A live, failed, interrupted, pending, or staged result stays inspectable. */
 export function canCollapseGroup(calls: readonly ToolGroupCall[], runs: Group['runs']): boolean {
   return calls.length > 1 && calls.every((call, index) => {
