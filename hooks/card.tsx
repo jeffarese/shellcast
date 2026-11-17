@@ -10,11 +10,16 @@ import {
   detectProgress,
   duration,
   exitCodeOf,
+  exitMeaning,
+  gistOf,
+  lastLine,
   shimmer,
   size,
   sparkline,
   tailLines,
+  toneParts,
 } from './format'
+import type { Progress } from './format'
 import { READ_WHOLE_BYTES, streamPath } from './live'
 import { commandIcon, commandLabel } from './icons'
 import type { IconMode } from './icons'
@@ -52,9 +57,14 @@ export type BashOutput = {
 }
 
 const BACKGROUND_LINES = 3
-const DONE_LINES = 2
+/** Lines a finished row reads to choose its gist. */
+const GIST_LINES = 8
 const FAILED_LINES = 8
 const DETAIL_LINES = 40
+/** Below this width a row keeps its title and drops what details repeat. */
+const NARROW = 80
+/** A shell that printed nothing for this long says so. */
+const QUIET_MS = 15_000
 
 type Chip = { text: string; color: string }
 
@@ -115,15 +125,21 @@ function displayTitle(title: string, command: string): string {
   return title.trim() === command.split('\n')[0]?.trim() ? commandLabel(command) : title
 }
 
+/** What follows a row's title: its gist (`⎿`) or, with none, its command (`$`). */
+type Subtitle = { mark: string; text: string; isToned?: boolean; isStrong?: boolean }
+
 function Header(
   card: Card,
   glyph: string,
   glyphColor: string,
   right: RenderNode[],
-  subtitle?: string,
+  subtitle?: Subtitle,
 ): RenderElement {
   const { Box, Text, Button } = card.els
   const icon = commandIcon(card.command, card.iconMode)
+  const parts = subtitle === undefined ? [] : subtitle.isToned ? toneParts(subtitle.text) : [{ text: subtitle.text }]
+  // The mark stays quiet even where the line opens on a toned count.
+  if (subtitle !== undefined && parts[0]?.tone !== undefined) parts.unshift({ text: '' })
   return (
     <Box>
       <Box flexShrink={0}>
@@ -133,7 +149,11 @@ function Header(
       <Box flexGrow={1} flexShrink={1}>
         <Text wrap="truncate-end">
           <Text bold>{displayTitle(card.title, card.command)}</Text>
-          {subtitle !== undefined && subtitle !== '' && <Text dimColor>{`  ${subtitle}`}</Text>}
+          {subtitle !== undefined && parts.map((part, i) => (
+            <Text color={part.tone} dimColor={part.tone === undefined && !subtitle.isStrong}>
+              {i === 0 ? `  ${subtitle.mark} ${part.text}` : part.text}
+            </Text>
+          ))}
         </Text>
       </Box>
       <Box flexShrink={0} marginLeft={2}>
@@ -142,7 +162,7 @@ function Header(
           <Box marginLeft={2}>
             <Button
               key="details"
-              label={card.isOpen ? '▾ less' : '▸ details'}
+              label={card.columns < NARROW ? card.isOpen ? '▾' : '▸' : card.isOpen ? '▾ less' : '▸ details'}
               plain
               dimColor
               onPress={card.toggle}
@@ -152,6 +172,61 @@ function Header(
       </Box>
     </Box>
   )
+}
+
+/** One part of a row's right side: plain facts are dim, a color marks a state. */
+type Seg = { text: string; color?: string } | { progress: Progress; width: number }
+
+/** Parts joined by ` · `: neighbouring dim ones as one Text, a bar as its two halves. */
+function Segs(els: Els, segs: readonly Seg[]): RenderNode[] {
+  const { Text } = els
+  const out: RenderNode[] = []
+  let dim = ''
+  const flush = () => {
+    if (dim !== '') out.push(<Text dimColor>{dim}</Text>)
+    dim = ''
+  }
+  segs.forEach((seg, i) => {
+    if (i > 0) dim += ' · '
+    if ('text' in seg && seg.color === undefined) {
+      dim += seg.text
+      return
+    }
+    flush()
+    if ('text' in seg) {
+      out.push(<Text color={seg.color}>{seg.text}</Text>)
+      return
+    }
+    const { filled, empty } = bar(seg.progress.ratio, seg.width)
+    if (filled !== '') out.push(<Text color="success">{filled}</Text>)
+    if (empty !== '') out.push(<Text color="inactive">{empty}</Text>)
+    out.push(<Text>{` ${seg.progress.label}`}</Text>)
+  })
+  flush()
+  return out
+}
+
+/**
+ * How long a watched shell has printed nothing, once that is worth saying:
+ * the answer to "is it stuck?". Unknown where its output file was never found.
+ */
+function quietOf(run: ShellRun): string | undefined {
+  if (run.file === undefined || run.startedAt === 0) return undefined
+  const quiet = run.now - (run.outputAt ?? run.spawnedAt ?? run.startedAt)
+  if (quiet < QUIET_MS) return undefined
+  return run.bytes === 0 ? 'no output yet' : `quiet ${duration(quiet)}`
+}
+
+/** The chips a row has room for, in their order; details list them all. */
+function fitChips(chips: readonly Chip[], budget: number): { shown: Chip[]; hidden: number } {
+  const shown: Chip[] = []
+  let left = budget
+  for (const chip of chips) {
+    if (chip.text.length + 2 > left) continue
+    shown.push(chip)
+    left -= chip.text.length + 2
+  }
+  return { shown, hidden: chips.length - shown.length }
 }
 
 function CommandLine(card: Card, isFull: boolean): RenderElement {
@@ -250,40 +325,70 @@ function Stats(card: Card, isBackground: boolean): RenderElement {
   )
 }
 
+/** `label value` facts on one wrapping line: short ones need no row each. */
+function FactLine(card: Card, facts: readonly [string, string][]): RenderElement {
+  const { Text } = card.els
+  return (
+    <Text wrap="wrap">
+      {facts.map(([label, value], i) => [
+        <Text dimColor>{`${i === 0 ? '' : '  ·  '}${label} `}</Text>,
+        <Text>{value}</Text>,
+      ])}
+    </Text>
+  )
+}
+
 function Details(card: Card, output: BashOutput | undefined, errorText: string | undefined): RenderElement {
   const { Box, Text } = card.els
   const { run } = card
-  const facts: [string, string][] = []
+  const timing: [string, string][] = []
   if (run.startedAt !== 0) {
     const at = new Date(run.spawnedAt ?? run.startedAt)
     const clock = [at.getHours(), at.getMinutes(), at.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')
-    facts.push(['started', clock])
+    timing.push(['started', clock])
   }
   const elapsed = elapsedOf(run)
-  if (elapsed !== undefined) facts.push(['took', duration(elapsed)])
-  facts.push(['timeout', duration(run.timeoutMs)])
-  if (run.background !== undefined) facts.push(['task', `${run.background.taskId} (${run.background.status})`])
+  if (elapsed !== undefined) timing.push(['took', duration(elapsed)])
+  timing.push(['timeout', duration(run.timeoutMs)])
+  if (run.background !== undefined) timing.push(['task', `${run.background.taskId} (${run.background.status})`])
+  const paths: [string, string][] = []
   const stream = run.file === undefined ? undefined : streamPath(run.file)
-  if (stream !== undefined) facts.push(['stream', stream])
-  if (output?.persistedOutputPath !== undefined) facts.push(['saved', output.persistedOutputPath])
-  for (const file of (output?.bashEditDiff?.files ?? []).slice(0, 8)) facts.push(['edited', file.filePath])
+  if (stream !== undefined) paths.push(['stream', stream])
+  if (output?.persistedOutputPath !== undefined) paths.push(['saved', output.persistedOutputPath])
+  for (const file of (output?.bashEditDiff?.files ?? []).slice(0, 8)) paths.push(['edited', file.filePath])
 
   const stdout = output?.stdout === undefined ? [] : tailLines(output.stdout, DETAIL_LINES)
   const stderr = output?.stderr === undefined ? [] : tailLines(output.stderr, DETAIL_LINES)
   const fallback = errorText !== undefined ? tailLines(errorText, DETAIL_LINES) : run.tail.slice(-DETAIL_LINES)
   const hasOwn = stdout.length > 0 || stderr.length > 0
+  // Only the end is drawn: say how much came before it.
+  const total = hasOwn ? countLines(output?.stdout ?? '') : errorText !== undefined ? countLines(errorText) : run.lines ?? 0
+  const drawn = hasOwn ? stdout.length : fallback.length
+  const earlier = drawn < DETAIL_LINES ? 0 : Math.max(0, total - drawn)
+  const chips = chipsOf(output, run)
 
   return (
     <Box flexDirection="column" marginTop={1}>
       {CommandLine(card, true)}
       <Box flexDirection="column" marginTop={1}>
+        {earlier > 0 && <Text dimColor>{`⋮ ${earlier} earlier line${earlier === 1 ? '' : 's'}`}</Text>}
         {hasOwn ? OutputLines(card, stdout, 'inactive') : OutputLines(card, fallback, 'inactive')}
+        {stderr.length > 0 && stdout.length > 0 && <Text color="error" dimColor>{'stderr'}</Text>}
         {stderr.length > 0 && OutputLines(card, stderr, 'error', 'error')}
+        {!hasOwn && fallback.length === 0 && <Text dimColor italic>{'▏ no output'}</Text>}
       </Box>
+      {chips.length > 0 && (
+        <Box marginTop={1}>
+          <Text wrap="wrap">
+            {chips.map((chip, i) => <Text color={chip.color}>{`${i === 0 ? '' : '   '}${chip.text}`}</Text>)}
+          </Text>
+        </Box>
+      )}
       <Box flexDirection="column" marginTop={1}>
-        {facts.map(([label, value]) => (
+        {FactLine(card, timing)}
+        {paths.map(([label, value]) => (
           <Box>
-            <Box width={9} flexShrink={0}>
+            <Box width={8} flexShrink={0}>
               <Text dimColor>{label}</Text>
             </Box>
             <Text wrap="truncate-middle">{value}</Text>
@@ -298,15 +403,25 @@ function Running(card: Card): RenderElement {
   const { run } = card
   const elapsed = elapsedOf(run)
   const progress = detectProgress(run.tail)
-  const meta = ['running', progress?.label, elapsed === undefined ? undefined : duration(elapsed)]
-    .filter(part => part !== undefined).join(' · ')
-  const chips: Chip[] = elapsed !== undefined && elapsed > run.timeoutMs / 2
-    ? [{ text: `⏱ times out in ${duration(Math.max(0, run.timeoutMs - elapsed))}`, color: 'warning' }]
-    : []
-  return Compact(
-    card, SPINNER[run.ticks % SPINNER.length] ?? '⠋', 'claude', meta,
-    run.tail.slice(-1), chips, () => Details(card, undefined, undefined),
-  )
+  const isLate = elapsed !== undefined && elapsed > run.timeoutMs / 2
+  const meta: Seg[] = []
+  if (isLate) meta.push({ text: `⏱ ${duration(Math.max(0, run.timeoutMs - elapsed))} left`, color: 'warning' })
+  if (progress !== undefined) {
+    meta.push({ progress, width: card.columns < NARROW ? 6 : 10 })
+  } else {
+    // The spinner already says it runs: a word only where nothing better does.
+    const quiet = quietOf(run)
+    if (quiet !== undefined) meta.push({ text: quiet })
+    else if (!isLate) meta.push({ text: 'running' })
+  }
+  if (elapsed !== undefined) meta.push({ text: duration(elapsed) })
+  return Compact(card, {
+    glyph: SPINNER[run.ticks % SPINNER.length] ?? '⠋',
+    color: 'claude',
+    meta,
+    gist: lastLine(run.tail),
+    details: () => Details(card, undefined, undefined),
+  })
 }
 
 /**
@@ -334,33 +449,44 @@ function BackgroundLive(card: Card, taskId: string): RenderElement {
   )
 }
 
+type Row = {
+  glyph: string
+  color: string
+  /** The right side: state, then counts, then the time, so times line up. */
+  meta: readonly Seg[]
+  /** The output line that says most; drawn only where the card owns the output. */
+  gist?: string
+  /** A finished row tones its result counts; a failed one is at full strength. */
+  isToned?: boolean
+  isStrong?: boolean
+  chips?: readonly Chip[]
+  details: (() => RenderElement) | null
+}
+
 /**
- * A shell as one line: glyph, what it is for, its latest output line (or
- * its command), chips and timing. Details open the rest; where the card
+ * A shell as one line: glyph, what it is for, the output line that says most
+ * (or its command), chips and timing. Details open the rest; where the card
  * does not own the output, the engine's result block follows.
  */
-function Compact(
-  card: Card,
-  glyph: string,
-  color: string,
-  meta: string,
-  lines: readonly string[],
-  chips: readonly Chip[],
-  details: (() => RenderElement) | null,
-  metaColor?: string,
-): RenderElement {
+function Compact(card: Card, row: Row): RenderElement {
   const { Box, Text } = card.els
-  const gist = card.ownsOutput ? lines.map(line => line.trim()).filter(line => line !== '').at(-1) : undefined
-  const firstLine = commandLabel(card.command)
-  const subtitle = gist !== undefined && gist !== '' ? `⎿ ${gist}` : firstLine !== '' ? `$ ${firstLine}` : undefined
+  const gist = card.ownsOutput ? row.gist : undefined
+  const label = commandLabel(card.command)
+  // A call with no description is titled by its command: once is enough.
+  const subtitle: Subtitle | undefined = gist !== undefined && gist !== ''
+    ? { mark: '⎿', text: gist, isToned: row.isToned, isStrong: row.isStrong }
+    : label !== '' && label !== displayTitle(card.title, card.command) ? { mark: '$', text: label } : undefined
+  // Where no details can open (the main screen), chips get more of the row.
+  const { shown, hidden } = fitChips(row.chips ?? [], Math.floor(card.columns / (card.toggle === undefined ? 2 : 3)))
   const right: RenderNode[] = [
-    ...chips.map(chip => <Text color={chip.color}>{`${chip.text}  `}</Text>),
-    <Text color={metaColor} dimColor={metaColor === undefined}>{meta}</Text>,
+    ...shown.map(chip => <Text color={chip.color}>{`${chip.text}  `}</Text>),
+    ...(hidden > 0 ? [<Text dimColor>{`+${hidden}  `}</Text>] : []),
+    ...Segs(card.els, row.meta),
   ]
   return (
     <Box flexDirection="column">
-      {Header(card, glyph, color, right, card.isOpen ? undefined : subtitle)}
-      {card.isOpen && details !== null && <Box paddingLeft={2}>{details()}</Box>}
+      {Header(card, row.glyph, row.color, right, card.isOpen ? undefined : subtitle)}
+      {card.isOpen && row.details !== null && <Box paddingLeft={2}>{row.details()}</Box>}
     </Box>
   )
 }
@@ -370,15 +496,20 @@ function Failed(card: Card, code: number, text: string): RenderElement {
   const body = text.replace(/^.*\bExit code \d+\b.*(?:\n|$)/m, '')
   const lines = tailLines(body, card.isOpen ? DETAIL_LINES : FAILED_LINES)
   const elapsed = elapsedOf(card.run)
+  const meaning = exitMeaning(code)
   if (!card.isOpen) {
-    const meta = elapsed === undefined ? `exit ${code}` : `exit ${code} · ${duration(elapsed)}`
-    return Compact(card, '✘', 'error', meta, lines, [], null, 'error')
+    const meta = [`exit ${code}`, card.columns < NARROW ? undefined : meaning, elapsed === undefined ? undefined : duration(elapsed)]
+      .filter(part => part !== undefined).join(' · ')
+    return Compact(card, {
+      glyph: '✘', color: 'error', meta: [{ text: meta, color: 'error' }],
+      gist: gistOf(lines), isToned: true, isStrong: true, details: null,
+    })
   }
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="error" paddingX={1}>
       {Header(card, '✘', 'error', [
         <Text color="error" bold>{`exit ${code}`}</Text>,
-        <Text dimColor>{elapsed === undefined ? '' : ` · ${duration(elapsed)}`}</Text>,
+        <Text dimColor>{`${meaning === undefined ? '' : ` · ${meaning}`}${elapsed === undefined ? '' : ` · ${duration(elapsed)}`}`}</Text>,
       ])}
       {CommandLine(card, card.isOpen)}
       {lines.length > 0 ? OutputLines(card, lines, 'error') : <Text dimColor italic>{'▏ no output'}</Text>}
@@ -386,12 +517,14 @@ function Failed(card: Card, code: number, text: string): RenderElement {
   )
 }
 
-function metaOf(run: ShellRun, lines: number, prefix: string[] = []): string {
-  const parts = [...prefix]
-  const elapsed = elapsedOf(run)
+/** A finished row's facts: its state, its line count, then its time, last. */
+function metaOf(card: Card, lines: number, prefix: string[] = []): Seg[] {
+  const isNarrow = card.columns < NARROW
+  const parts = isNarrow ? prefix.slice(-1) : [...prefix]
+  const elapsed = elapsedOf(card.run)
+  if (!isNarrow || elapsed === undefined) parts.push(lines === 0 ? 'no output' : `${lines} line${lines === 1 ? '' : 's'}`)
   if (elapsed !== undefined) parts.push(duration(elapsed))
-  parts.push(lines === 0 ? 'no output' : `${lines} line${lines === 1 ? '' : 's'}`)
-  return parts.join(' · ')
+  return [{ text: parts.join(' · ') }]
 }
 
 /**
@@ -423,7 +556,10 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
   if (props.isInterrupted) {
     const elapsed = elapsedOf(run)
     const meta = elapsed === undefined ? 'interrupted' : `interrupted after ${duration(elapsed)}`
-    return Compact(card, '⊘', 'warning', meta, run.tail.slice(-DONE_LINES), [], () => Details(card, undefined, undefined))
+    return Compact(card, {
+      glyph: '⊘', color: 'warning', meta: [{ text: meta }],
+      gist: lastLine(run.tail), details: () => Details(card, undefined, undefined),
+    })
   }
 
   if (props.isErrored) {
@@ -431,19 +567,21 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
     const code = exitCodeOf(text)
     if (code !== undefined) return Failed(card, code, text)
     // Refused before it ran (the dialog, a rule, a hook): not a command failure.
-    const reason = tailLines(text, 2)
-    return Compact(card, '⊘', 'warning', 'not run', reason, [], () => Details(card, undefined, text))
+    return Compact(card, {
+      glyph: '⊘', color: 'warning', meta: [{ text: 'not run' }],
+      gist: lastLine(tailLines(text, 2)), details: () => Details(card, undefined, text),
+    })
   }
 
   if (props.output === undefined && run.endedAt === undefined) {
     // The model is still writing the call, or it waits on a check before it
     // runs: neither running nor done yet.
-    const spinner = SPINNER[run.ticks % SPINNER.length] ?? '⠋'
-    return Compact(card, spinner, 'claude', 'starting', [], [], null)
+    return Compact(card, { glyph: SPINNER[run.ticks % SPINNER.length] ?? '⠋', color: 'claude', meta: [{ text: 'starting' }], details: null })
   }
 
   const output = typeof props.output === 'object' && props.output !== null ? (props.output as BashOutput) : undefined
   const chips = chipsOf(output, run)
+  const details = () => Details(card, output, undefined)
   const taskId = output?.backgroundTaskId
   if (taskId !== undefined) {
     const status = run.background?.status
@@ -453,40 +591,43 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
       // the transcript never reflows as the shell runs or ends.
       const elapsed = elapsedOf(run)
       const meta = `pinned ↓${elapsed === undefined ? '' : ` · ${duration(elapsed)}`}`
-      return Compact(card, run.ticks % 4 < 2 ? '◉' : '○', 'suggestion', meta, [], chips, () => Details(card, output, undefined), 'suggestion')
+      return Compact(card, { glyph: run.ticks % 4 < 2 ? '◉' : '○', color: 'suggestion', meta: [{ text: meta, color: 'suggestion' }], chips, details })
     }
     if (status === undefined) {
-      return Compact(card, '◉', 'suggestion', `background · ${taskId}`, [], chips, () => Details(card, output, undefined))
+      return Compact(card, { glyph: '◉', color: 'suggestion', meta: [{ text: `background · ${taskId}` }], chips, details })
     }
+    const gist = gistOf(run.tail.slice(-GIST_LINES))
+    const lines = run.lines ?? run.tail.length
     const exit = run.background?.exitCode
     if (status === 'finished') {
-      return Compact(card, '○', 'subtle', metaOf(run, run.lines ?? run.tail.length, ['background', 'finished · exit unknown']),
-        run.tail.slice(-DONE_LINES), chips, () => Details(card, output, undefined))
+      return Compact(card, {
+        glyph: '○', color: 'subtle', meta: metaOf(card, lines, ['background', 'finished · exit unknown']),
+        gist, isToned: true, chips, details,
+      })
     }
     const isKilled = status === 'killed' || status === 'stopped'
     const isOk = !isKilled && status === 'completed' && (exit === undefined || exit === 0)
-    const glyph = isKilled ? '■' : isOk ? '✔' : '✘'
-    const color = isKilled ? 'warning' : isOk ? 'success' : 'error'
     const word = isKilled ? 'stopped' : exit === undefined ? status : `exit ${exit}`
-    const meta = metaOf(run, run.lines ?? run.tail.length, ['background', word])
-    return Compact(card, glyph, color, meta, run.tail.slice(-DONE_LINES), chips, () => Details(card, output, undefined))
+    return Compact(card, {
+      glyph: isKilled ? '■' : isOk ? '✔' : '✘',
+      color: isKilled ? 'warning' : isOk ? 'success' : 'error',
+      meta: metaOf(card, lines, ['background', word]),
+      gist, isToned: true, isStrong: !isKilled && !isOk, chips, details,
+    })
   }
 
   const stdout = output?.stdout ?? ''
   const stderr = output?.stderr ?? ''
-  const lines = countLines(stdout) + countLines(stderr)
-  const shown = tailLines(stdout, DONE_LINES)
-  const shownErr = shown.length === 0 ? tailLines(stderr, DONE_LINES) : []
-  const meta = metaOf(run, lines)
-  return Compact(
-    card,
-    '✔',
-    'success',
-    meta,
-    shown.length > 0 ? shown : shownErr,
+  const shown = tailLines(stdout, GIST_LINES)
+  return Compact(card, {
+    glyph: '✔',
+    color: 'success',
+    meta: metaOf(card, countLines(stdout) + countLines(stderr)),
+    gist: gistOf(shown.length > 0 ? shown : tailLines(stderr, GIST_LINES)),
+    isToned: true,
     chips,
-    () => Details(card, output, undefined),
-  )
+    details,
+  })
 }
 
 /** A running background shell, for the band and the footer. */
@@ -506,20 +647,23 @@ function BandRow(els: Els, { title, command, run }: Pinned, columns: number, ico
   const icon = commandIcon(command, iconMode)
   const elapsed = elapsedOf(run)
   const progress = detectProgress(run.tail)
-  const last = run.tail[run.tail.length - 1]?.trim()
+  const last = lastLine(run.tail)
+  // With no output at all the row already says it is waiting.
+  const quiet = run.bytes === 0 ? undefined : quietOf(run)
+  const when = [quiet, elapsed === undefined ? undefined : duration(elapsed)].filter(part => part !== undefined).join(' · ')
   return (
     <Box>
       <Box flexShrink={0}>
         <Text color="suggestion">{'◉ '}</Text>
         {icon !== '' && <Text dimColor>{`${icon} `}</Text>}
         <Text bold>{`${clip(bandTitle(displayTitle(title, command)), Math.max(12, Math.floor(columns / 3)))}  `}</Text>
-        {progress !== undefined && <Text color="success">{progress.label}</Text>}
+        {progress !== undefined && Segs(els, [{ progress, width: columns < NARROW ? 6 : 8 }])}
       </Box>
       <Box flexGrow={1} flexShrink={1}>
-        <Text dimColor wrap="truncate-end">{`  ${last ?? 'waiting for output…'}`}</Text>
+        <Text dimColor wrap="truncate-end">{`${progress === undefined ? '' : '  '}${last ?? 'waiting for output…'}`}</Text>
       </Box>
       <Box flexShrink={0}>
-        <Text dimColor>{elapsed === undefined ? '' : `  ${duration(elapsed)}`}</Text>
+        <Text dimColor>{when === '' ? '' : `  ${when}`}</Text>
       </Box>
     </Box>
   )

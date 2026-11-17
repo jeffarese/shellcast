@@ -143,6 +143,7 @@ async function sample(io: Io, path: string, run: ShellRun, now: number): Promise
   return {
     rates,
     bytes: stat.size,
+    outputAt: now,
     tail: tailLines(output.text, KEEP_LINES),
     ...(output.lines === undefined ? {} : { lines: output.lines }),
   }

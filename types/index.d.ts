@@ -26,6 +26,8 @@ export type ShellRun = {
   /** The live output file's name in the session's tasks folder. */
   file?: string
   bytes: number
+  /** When the output file last grew: how long the shell has been quiet. */
+  outputAt?: number
   lines?: number
   /** Last lines of output, ANSI stripped, carriage returns resolved. */
   tail: string[]

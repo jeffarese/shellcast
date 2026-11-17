@@ -24,10 +24,21 @@ Commands stay on one line from start to finish, with live output, reported progr
 Compact command labels omit leading directory setup: `cd /long/worktree/path && npm test` shows as `npm test`. Descriptions stay intact, and details retain the full original command.
 
 ```
-✔ ⚗ Run the test suite  ⎿ Tests  73 passed (73)              5.3s · 13 lines  ▸ details
-✔ ⚙ Production build  ⎿ ✓ built in 4.61s                      5.3s · 6 lines  ▸ details
-✘ $ Lint the codebase  ⎿ ✖ 2 problems (2 errors, 0 warnings)  exit 1 · 1.8s  ▸ details
+✔ ⚗ Run the test suite  ⎿ Tests 73 passed (73)                    13 lines · 5.3s  ▸ details
+✔ ⚙ Production build  ⎿ ✓ built in 4.61s                           6 lines · 4.7s  ▸ details
+✘ $ Lint the codebase  ⎿ ✖ 2 problems (2 errors, 0 warnings)        exit 1 · 1.8s  ▸ details
+⠴ ⚙ Bundle the app  ⎿ [42/120] compiling src/cart.ts      ━━━╸────── 42/120 · 11s  ▸ details
+⠴ ⚙ Type-check  ⎿ > tsc --noEmit                                  quiet 45s · 47s  ▸ details
 ```
+
+Each row is built to be read at a glance:
+
+- **The line that says how it went.** A finished row shows the command's result line (`Tests 2 failed, 71 passed`, `✖ 2 problems`, `12 passed in 0.42s`) when one is among its last few lines, not whatever was printed last. Failing that it shows the last line the command itself printed, skipping a package runner's trailer such as `npm ERR!` or `ELIFECYCLE`. Banner rules and column padding are removed.
+- **Counts in color.** In that line, counts above zero are toned: passed in green, failed, errors and problems in red, warnings in yellow. A failed row's line is drawn at full strength, so it stands out among dim successes.
+- **Times in one column.** The duration is always the last thing on the right, so times line up down the transcript.
+- **Is it stuck?** A running row says `quiet 45s` once its shell has printed nothing for 15 seconds, and `no output yet` if it never has. Reported progress (`42%`, `[12/40]`) draws a small bar. Past half its timeout the row counts down: `⏱ 25s left`.
+- **Signal exits named.** `exit 137 · killed`, `exit 130 · interrupted`, `exit 143 · terminated`, `exit 139 · segfault`, `exit 124 · timed out`.
+- **The title always wins.** Chips are shown while they fit in a third of the row and the rest are counted (`+2`) and listed in details. Below 80 columns a row keeps its title, state and time, and the details control becomes `▸`. A call with no description shows its command once, not twice.
 
 ## Install
 
@@ -44,12 +55,12 @@ Answer `y` to add the marketplace, then pick a scope (user scope loads it in eve
 | State | Card |
 | --- | --- |
 | **Starting** | A quiet one-line row with a spinner. |
-| **Running** | Always a compact row: spinner, title, latest output in fullscreen, reported progress, elapsed time and a timeout warning past half the limit. Long-running commands stay on one line too; command and output details open only when requested. |
-| **Done** | A one-liner: `✔`, the description, the last line of output (the command when there is none), duration and line count. Chips appear for git commits, pushes and PRs, edited files, saved output, unsandboxed runs and timeouts. |
+| **Running** | Always a compact row: spinner, title, latest output in fullscreen, a small bar for reported progress, how long the shell has been quiet, elapsed time and a countdown past half the timeout. Long-running commands stay on one line too; command and output details open only when requested. |
+| **Done** | A one-liner: `✔`, the description, the result line of the output (the command when there is none), line count and duration. Chips appear for git commits, pushes and PRs, edited files, saved output, unsandboxed runs and timeouts. |
 | **Completed block** | Consecutive successful tools collapse into a description such as `✔ Searched for 1 pattern, read 1 file, ran 7 shell commands`, followed by their icons and elapsed time when observed. Repeated icons get a count. Long summaries wrap to keep the description and icons visible. In fullscreen, `▸ details` restores the individual rows; each shell still has its own output toggle. Active blocks, failures, interruptions and pending results stay visible. |
-| **Failed** | The same one-liner in red, with `✘` and the exit code. A call you declined shows as `⊘ not run`, not as a failure. |
-| **Background** | A compact row stays above the prompt with the title, latest output, reported progress and elapsed time. At most three shells are shown, with an overflow count for the rest; there are no animated meters in these rows. The footer describes one shell and counts the others. At each main turn's end, the plugin reconciles its list with Claude Code's active tasks, removing stale rows even if a completion notice was missed. Another plugin can run ahead of shellcast and skip those hooks. Until shellcast's own `session.append` hook has run in a session, it also reads completion notices from the transcript every three seconds while a background shell runs. The transcript keeps each shell's details and final result; a missing exit status is shown as `finished · exit unknown`. Set `SHELLCAST_BACKGROUND=cards` before starting Claude Code to restore full pinned cards. |
-| **Details** | In the fullscreen layout, `▸ details` on any card opens the full command, stdout and stderr, timing, task id and output file. |
+| **Failed** | The same one-liner with a red `✘` and exit code, and its result or error line at full strength. A call you declined shows as `⊘ not run`, not as a failure. |
+| **Background** | A compact row stays above the prompt with the title, latest output, a small bar for reported progress, how long it has been quiet and elapsed time. At most three shells are shown, with an overflow count for the rest; nothing in these rows animates. The footer describes one shell and counts the others. At each main turn's end, the plugin reconciles its list with Claude Code's active tasks, removing stale rows even if a completion notice was missed. Another plugin can run ahead of shellcast and skip those hooks. Until shellcast's own `session.append` hook has run in a session, it also reads completion notices from the transcript every three seconds while a background shell runs. The transcript keeps each shell's details and final result; a missing exit status is shown as `finished · exit unknown`. Set `SHELLCAST_BACKGROUND=cards` before starting Claude Code to restore full pinned cards. |
+| **Details** | In the fullscreen layout, `▸ details` on any card opens the full command, the last 40 lines of stdout and stderr (with a count of the lines before them), every chip, timing, task id and output file. |
 
 On the terminal's main screen (not fullscreen), a command that ended well is that one row too: Claude Code's `⎿` result block under it, with its output preview and notes such as `Shell cwd was reset` or `Allowed by auto mode classifier`, is left out. Failures, interrupts, image output and edit diffs keep that block, and collapsed groups show a ctrl+o hint. Claude Code's expanded transcript and verbose mode retain every individual row. The desktop app, VS Code and mobile keep their native rows.
 

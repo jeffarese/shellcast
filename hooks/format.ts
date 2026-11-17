@@ -84,6 +84,86 @@ export function detectProgress(tail: readonly string[]): Progress | undefined {
   return undefined
 }
 
+const RULE = /^[=\-_*#~]{3,}\s*|\s*[=\-_*#~]{3,}$/g
+
+/** A line as a row shows it: banner rules and column padding removed. */
+export function tidy(line: string): string {
+  return line.replace(RULE, '').replace(/\s{2,}/g, ' ').trim()
+}
+
+const COUNTED = '(?:passed|passing|failed|failing|failures?|errors?|problems?|warnings?)'
+const RESULT = new RegExp(`\\b\\d+\\s+(?:tests?\\s+)?${COUNTED}\\b`, 'i')
+const COUNTS = new RegExp(`\\b(\\d+)\\s+(${COUNTED})\\b`, 'gi')
+// What a package runner adds after the command's own last word.
+const BOILERPLATE = /^(?:npm (?:ERR!|error|notice)|ELIFECYCLE\b|error Command failed|info Visit |make(?:\[\d+\])?: \*\*\*|exit status \d+$|Ran all test suites|run `npm fund`|\d+ packages are looking for funding)/i
+const GIST_WINDOW = 6
+
+/**
+ * The one line that says how a finished command went: its newest result line
+ * (`Tests 2 failed, 71 passed`, `✖ 2 problems`) among the last few, else its
+ * last line that is not a runner's boilerplate, else its last line.
+ */
+export function gistOf(lines: readonly string[]): string | undefined {
+  let last: string | undefined
+  let plain: string | undefined
+  let seen = 0
+  for (let i = lines.length - 1; i >= 0 && seen < GIST_WINDOW; i--) {
+    const line = tidy(lines[i]!)
+    if (line === '') continue
+    seen++
+    if (RESULT.test(line)) return line
+    last ??= line
+    if (plain === undefined && !BOILERPLATE.test(line)) plain = line
+  }
+  return plain ?? last
+}
+
+/** The newest line that shows anything, for a row that follows live output. */
+export function lastLine(lines: readonly string[]): string | undefined {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = tidy(lines[i]!)
+    if (line !== '') return line
+  }
+  return undefined
+}
+
+export type Tone = 'success' | 'error' | 'warning'
+
+/**
+ * A result line cut where it counts outcomes, each count above zero toned:
+ * `2 failed` as an error, `71 passed` as a success, `3 warnings` as a warning.
+ */
+export function toneParts(text: string): { text: string; tone?: Tone }[] {
+  const parts: { text: string; tone?: Tone }[] = []
+  let at = 0
+  for (const found of text.matchAll(COUNTS)) {
+    if (Number(found[1]) === 0) continue
+    const word = found[2]!.toLowerCase()
+    const tone: Tone = word.startsWith('pass') ? 'success' : word.startsWith('warn') ? 'warning' : 'error'
+    if (found.index > at) parts.push({ text: text.slice(at, found.index) })
+    parts.push({ text: found[0], tone })
+    at = found.index + found[0].length
+  }
+  if (at < text.length || parts.length === 0) parts.push({ text: text.slice(at) })
+  return parts
+}
+
+const EXITS: Record<number, string> = {
+  124: 'timed out',
+  130: 'interrupted',
+  137: 'killed',
+  139: 'segfault',
+  143: 'terminated',
+}
+
+/**
+ * What an exit code a signal or `timeout` leaves means: output seldom says.
+ * (126 and 127 are left out: the shell prints their reason itself.)
+ */
+export function exitMeaning(code: number): string | undefined {
+  return EXITS[code]
+}
+
 /** A determinate bar `━━━━━╸────`, as its filled and empty halves. */
 export function bar(ratio: number, width: number): { filled: string; empty: string } {
   const cells = Math.max(0, Math.min(1, ratio)) * width

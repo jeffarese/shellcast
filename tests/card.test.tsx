@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { MockClock, TestBody } from 'claude-code/testing'
-import { footerTail } from '../hooks/card'
+import type { ShellRun } from '../types'
+import { drawCard, drawPinned, footerTail } from '../hooks/card'
+import type { Card } from '../hooks/card'
 import { BLANK, SWEEP_MS, TICK_MS } from '../hooks/live'
 
 const PLUGIN = 'shellcast'
@@ -69,7 +71,10 @@ test('long-running shells stay compact and only expand when details are requeste
     props: call({ tool_use_id: id, isRunning: true }),
   })
   expect(await ui.find({ type: 'Text', text: /waiting for output/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: 'running · 1m 30s' })).toBeDefined()
+  // Past half its timeout the row counts down instead of saying it runs.
+  expect(await ui.find({ type: 'Text', text: '⏱ 30s left' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' · 1m 30s' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /running/ })).toBeUndefined()
   expect(await ui.find({ type: 'Code' })).toBeUndefined()
   expect(await ui.find({ type: 'Button', key: 'details' })).toBeDefined()
   await ui.press({ key: 'details' })
@@ -80,7 +85,7 @@ test('long-running shells stay compact and only expand when details are requeste
   expect((await running).deny).toBeUndefined()
 })
 
-test('a finished call is a compact row with its last output', async ($, on) => {
+test('a finished call is a compact row with the line that says how it went', async ($, on) => {
   mock.env(on, {})
   const ui = await $.ui.mount({
     plugin: PLUGIN,
@@ -88,14 +93,90 @@ test('a finished call is a compact row with its last output', async ($, on) => {
     component: 'ToolUse',
     viewport: VIEWPORT,
     props: call({
-      output: { stdout: 'one\ntwo\nTests  12 passed\n', stderr: '', interrupted: false },
+      output: { stdout: 'one\n      Tests  12 passed (12)\n   Duration  1.21s\n', stderr: '', interrupted: false },
     }),
   })
   expect(await ui.find({ type: 'Text', text: '✔ ' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '⚗ ' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '3 lines' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Tests  12 passed' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'one' })).toBeUndefined()
+  // The result line, not the timing under it; its count toned, its padding gone.
+  expect(await ui.find({ type: 'Text', text: '⎿ Tests 12 passed (12)' })).toBeDefined()
+  expect((await ui.findAll({ type: 'Text', text: '12 passed' })).some(found => found.text === '12 passed')).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /Duration|one/ })).toBeUndefined()
+})
+
+test('a failed row leads with its result line, not the runner\'s boilerplate', async ($, on) => {
+  mock.env(on, {})
+  const output = 'Exit code 1\nFAIL src/cart.test.ts\nTests:       2 failed, 71 passed, 73 total\nTime:        2.31 s\nRan all test suites.\nnpm ERR! Test failed.  See above for more details.\n'
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT, props: call({ isErrored: true, output }) })
+  expect(await ui.find({ type: 'Text', text: '⎿ Tests: 2 failed, 71 passed, 73 total' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /npm ERR/ })).toBeUndefined()
+  // No result line: the last one the command itself printed.
+  await ui.redraw(call({ isErrored: true, output: 'Exit code 1\nerror TS2322: Type mismatch\n ELIFECYCLE  Command failed with exit code 1.\n' }))
+  expect(await ui.find({ type: 'Text', text: '⎿ error TS2322: Type mismatch' })).toBeDefined()
+  // A signal's exit code is named: the output seldom says why.
+  await ui.redraw(call({ isErrored: true, output: 'Exit code 137\nbuilding\n' }))
+  expect(await ui.find({ type: 'Text', text: 'exit 137 · killed' })).toBeDefined()
+})
+
+test('a call titled by its own command does not repeat it', async ($, on) => {
+  mock.env(on, {})
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+    props: call({ input: { command: 'mkdir -p dist' }, output: { stdout: '', stderr: '', interrupted: false } }) })
+  expect(await ui.find({ type: 'Text', text: 'mkdir -p dist' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /\$ mkdir/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'no output' })).toBeDefined()
+})
+
+test('chips yield to the title: those that fit are shown, the rest counted and kept in details', async ($, on) => {
+  mock.env(on, {})
+  const output = {
+    stdout: '[main 1a2b3c4] fix\n', stderr: '', interrupted: false, dangerouslyDisableSandbox: true,
+    gitOperation: { commit: { sha: '1a2b3c4d5e', kind: 'committed', branch: 'main' }, push: { branch: 'main' } },
+  }
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+    props: call({ input: { command: 'git commit -am fix && git push', description: 'Commit and push' }, output }) })
+  expect(await ui.find({ type: 'Text', text: '⎇ committed 1a2b3c4 on main' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /pushed main|unsandboxed/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: '+2' })).toBeDefined()
+  await ui.press({ key: 'details' })
+  expect(await ui.find({ type: 'Text', text: '↑ pushed main' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '⚠ unsandboxed' })).toBeDefined()
+})
+
+test('a narrow terminal keeps the title: time only, and a one-glyph details control', async ($, on) => {
+  mock.env(on, {})
+  const clock = mock.clock(on, { now: 1_000 })
+  on('session.start', () => ({ cwd: '/work' }))
+  let id = ''
+  on('tool.call', { tool: 'Bash' }, async (_, e) => {
+    id = e.tool_use_id
+    await clock.advance(2_000)
+    return { result: { stdout: 'built\n', stderr: '', interrupted: false } }
+  })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'make', description: 'Build it' })
+  const props = call({ tool_use_id: id, input: { command: 'make', description: 'Build it' }, output: { stdout: 'built\n', stderr: '', interrupted: false } })
+  const narrow = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', requestId: id, viewport: { ...VIEWPORT, columns: 64 }, props })
+  expect(await narrow.find({ type: 'Text', text: /1 line/ })).toBeUndefined()
+  expect(await narrow.find({ type: 'Text', text: '2.0s' })).toBeDefined()
+  expect((await narrow.find({ type: 'Button', key: 'details' }))?.text).toBe('▸')
+  await narrow.unmount()
+  const wide = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', requestId: id, viewport: VIEWPORT, props })
+  expect(await wide.find({ type: 'Text', text: '1 line · 2.0s' })).toBeDefined()
+  expect((await wide.find({ type: 'Button', key: 'details' }))?.text).toBe('▸ details')
+})
+
+test('details say how much output came before the lines they show, and label stderr', async ($, on) => {
+  mock.env(on, {})
+  const stdout = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join('\n') + '\n'
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+    props: call({ output: { stdout, stderr: 'warn: careful\n', interrupted: false } }) })
+  await ui.press({ key: 'details' })
+  expect(await ui.find({ type: 'Text', text: '⋮ 60 earlier lines' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'line 61' })).toBeDefined()
+  expect((await ui.findAll({ type: 'Text', text: 'stderr' })).some(found => found.text === 'stderr')).toBe(true)
+  expect(await ui.find({ type: 'Text', text: 'timeout 2m 00s' })).toBeDefined()
 })
 
 test('details open the full output and close again', async ($, on) => {
@@ -319,7 +400,7 @@ test('a call the agent ran is timed and drawn from what the mod observed', async
       output: { stdout: 'built\n', stderr: '', interrupted: false },
     }),
   })
-  expect(await ui.find({ type: 'Text', text: '0.0s · 1 line' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '1 line · 0.0s' })).toBeDefined()
 })
 
 async function startBackgrounds($: Parameters<TestBody>[0], on: Parameters<TestBody>[1], taskIds = ['b42'], clock?: MockClock) {
@@ -536,4 +617,39 @@ test("the footer's shell count says what the shell is doing", async ($, on) => {
   await startBackground($, on)
   const hint = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'PromptHint', viewport: VIEWPORT, props: { hint: '1 shell', isDraft: false, isWorking: true } })
   expect(await hint.find({ type: 'Text', text: /^1 shell → Run the e2e suite/ })).toBeDefined()
+})
+
+// Drawn directly, as the perf score does: a run that has an output file to watch.
+const ELS = { Box: 'Box', Text: 'Text', Button: 'Button', Code: 'Code' } as unknown as Card['els']
+const RUNNING = { input: {}, isRunning: true, isErrored: false, isInterrupted: false }
+
+function shown(tree: unknown): string {
+  if (typeof tree === 'string') return tree
+  if (Array.isArray(tree)) return tree.map(shown).join('')
+  if (typeof tree !== 'object' || tree === null || !('children' in tree)) return ''
+  return shown(tree.children)
+}
+
+const watched = (run: Partial<ShellRun>, columns = 100): Card => ({
+  els: ELS, title: 'Build', command: 'make', iconMode: 'none', columns, isOpen: false, toggle: undefined, ownsOutput: true,
+  run: { ...BLANK, startedAt: 1_000, spawnedAt: 1_000, file: 'b1.output', ...run },
+})
+
+test('a running row says how long its shell has been quiet, and never guesses without its output file', () => {
+  expect(shown(drawCard(watched({ now: 31_000, bytes: 120, outputAt: 11_000, tail: ['compiling'] }), RUNNING))).toContain('quiet 20s · 30s')
+  expect(shown(drawCard(watched({ now: 31_000, bytes: 0 }), RUNNING))).toContain('no output yet · 30s')
+  // Fresh output, or no file to watch: it just runs.
+  expect(shown(drawCard(watched({ now: 11_000, bytes: 120, outputAt: 9_000 }), RUNNING))).toContain('running · 10s')
+  expect(shown(drawCard(watched({ now: 31_000, file: undefined }), RUNNING))).toContain('running · 30s')
+})
+
+test('reported progress draws a small bar in the row and in the band', () => {
+  const run = { now: 13_000, bytes: 9, outputAt: 13_000, tail: ['[30/120] compiling'] }
+  expect(shown(drawCard(watched(run), RUNNING))).toContain('━━╸─────── 30/120 · 12s')
+  expect(shown(drawCard(watched(run, 64), RUNNING))).toContain('━╸──── 30/120 · 12s')
+  const shell = { title: 'Build', command: 'make', run: watched({ ...run, background: { taskId: 'b1', status: 'running' } }).run }
+  expect(shown(drawPinned(ELS, [shell], 100, 10, 'none'))).toContain('Build  ━━────── 30/120  [30/120] compiling  12s')
+  // A band row whose shell went quiet says for how long, before its age.
+  const idle = { ...shell, run: { ...shell.run, now: 61_000, outputAt: 21_000, tail: ['ready on :5173'] } }
+  expect(shown(drawPinned(ELS, [idle], 100, 10, 'none'))).toContain('Build  ready on :5173  quiet 40s · 1m 00s')
 })

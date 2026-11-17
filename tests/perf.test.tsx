@@ -111,13 +111,14 @@ const BUDGET: Record<keyof typeof SCENARIOS, number> = {
   'done · icons off': 10,
   'done · main screen': 11,
   'done · fullscreen': 13,
-  'done · fullscreen, open': 157,
+  'done · fullscreen, open': 154,
   'failed · fullscreen': 13,
   'interrupted · main screen': 11,
-  'running · compact row': 13,
+  // A reported count draws a bar: its two halves and its figure.
+  'running · compact row': 16,
   'background · transcript row': 11,
-  'band · icons off': 28,
-  'band · 3 pinned shells': 31,
+  'band · icons off': 34,
+  'band · 3 pinned shells': 37,
   'band · 3 full cards': 97,
   'footer · 3 shells': 0,
 }

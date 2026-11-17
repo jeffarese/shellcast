@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bar, detectProgress, duration, exitCodeOf, parseNotifications, shimmer, sparkline, tailLines } from '../hooks/format'
+import { bar, detectProgress, duration, exitCodeOf, exitMeaning, gistOf, lastLine, parseNotifications, shimmer, sparkline, tailLines, tidy, toneParts } from '../hooks/format'
 
 test('tail lines strip escapes and keep only the last frame of a progress line', () => {
   const raw = '\x1b[32mok\x1b[0m first\r\ndownloading 10%\rdownloading 55%\rdownloading 90%\n\n'
@@ -41,4 +41,50 @@ test('durations, exit codes and notifications parse', () => {
       '<summary>Background command "npm run dev" completed (exit code 0)</summary>\n</task-notification>',
   )
   expect(notes).toEqual([{ taskId: 'b1x2y3z4w', status: 'completed', exitCode: 0 }])
+})
+
+test('a gist is the newest result line, else the last line that is not boilerplate', () => {
+  // vitest, jest, pytest, eslint: the line that counts outcomes, wherever it sits near the end.
+  expect(gistOf([' Test Files  2 passed (2)', '      Tests  73 passed (73)', '   Start at  10:02:11', '   Duration  1.21s']))
+    .toBe('Tests 73 passed (73)')
+  expect(gistOf(['Tests:       2 failed, 71 passed, 73 total', 'Snapshots:   0 total', 'Time:        2.31 s', 'Ran all test suites.']))
+    .toBe('Tests: 2 failed, 71 passed, 73 total')
+  expect(gistOf(['collected 12 items', '', '============ 12 passed in 0.42s ============'])).toBe('12 passed in 0.42s')
+  expect(gistOf(['✖ 2 problems (2 errors, 0 warnings)', '', ' ELIFECYCLE  Command failed with exit code 1.'])).toBe('✖ 2 problems (2 errors, 0 warnings)')
+  // No result line: the last line, skipping a runner's trailer and bare rules.
+  expect(gistOf(['transforming...', '✓ built in 4.61s'])).toBe('✓ built in 4.61s')
+  expect(gistOf(['boom', 'npm ERR! code 1', 'npm ERR! A complete log of this run can be found in: /x'])).toBe('boom')
+  expect(gistOf(['done', '=========='])).toBe('done')
+  // Nothing but boilerplate still beats nothing; a far-off result line does not outrank the end.
+  expect(gistOf(['npm ERR! code 1'])).toBe('npm ERR! code 1')
+  expect(gistOf(['3 passed', 'a', 'b', 'c', 'd', 'e', 'Deployed to https://example.test'])).toBe('Deployed to https://example.test')
+  expect(gistOf([])).toBeUndefined()
+  expect(gistOf(['', '  '])).toBeUndefined()
+})
+
+test('live rows follow the newest visible line, tidied', () => {
+  expect(lastLine(['a', '  [3/9]   bundling', '', ''])).toBe('[3/9] bundling')
+  expect(lastLine([])).toBeUndefined()
+  expect(tidy('--- a/file.ts')).toBe('a/file.ts')
+  expect(tidy('git push --force')).toBe('git push --force')
+})
+
+test('result counts above zero are toned; zero counts and other words are not', () => {
+  expect(toneParts('Tests: 2 failed, 71 passed, 73 total')).toEqual([
+    { text: 'Tests: ' }, { text: '2 failed', tone: 'error' }, { text: ', ' }, { text: '71 passed', tone: 'success' }, { text: ', 73 total' },
+  ])
+  expect(toneParts('✖ 3 problems (1 error, 2 warnings)')).toEqual([
+    { text: '✖ ' }, { text: '3 problems', tone: 'error' }, { text: ' (' }, { text: '1 error', tone: 'error' }, { text: ', ' },
+    { text: '2 warnings', tone: 'warning' }, { text: ')' },
+  ])
+  expect(toneParts('12 passed, 0 failed')).toEqual([{ text: '12 passed', tone: 'success' }, { text: ', 0 failed' }])
+  expect(toneParts('✓ built in 4.61s')).toEqual([{ text: '✓ built in 4.61s' }])
+  expect(toneParts('')).toEqual([{ text: '' }])
+})
+
+test('signal exit codes are named; ordinary ones and those the shell explains are not', () => {
+  expect(exitMeaning(137)).toBe('killed')
+  expect(exitMeaning(130)).toBe('interrupted')
+  expect(exitMeaning(1)).toBeUndefined()
+  expect(exitMeaning(127)).toBeUndefined()
 })
