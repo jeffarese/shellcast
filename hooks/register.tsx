@@ -130,6 +130,7 @@ export const register: Register = on => {
       title: input.description?.trim() || command.split('\n')[0] || 'Shell',
       command,
       iconMode: iconMode(await $.env.get('SHELLCAST_ICONS')),
+      places: { cwd: await $.session.cwd().catch(() => undefined), home: await $.env.get('HOME') },
       run: await read($, memberOf(runs, e)),
       columns: e.viewport?.columns ?? 100,
       isOpen: await read($, memberOf(expanded, e)),

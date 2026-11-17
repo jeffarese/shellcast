@@ -14,14 +14,15 @@ import {
   gistOf,
   lastLine,
   shimmer,
+  shortPaths,
   size,
   sparkline,
   tailLines,
   toneParts,
 } from './format'
-import type { Progress } from './format'
+import type { Places, Progress } from './format'
 import { READ_WHOLE_BYTES, streamPath } from './live'
-import { commandIcon, commandLabel } from './icons'
+import { commandIcon, commandLabel, endsInContent } from './icons'
 import type { IconMode } from './icons'
 
 type Els = Elements['terminal']
@@ -73,6 +74,8 @@ export type Card = {
   title: string
   command: string
   iconMode?: IconMode
+  /** The session's working folder and home: rows write paths under them the short way. */
+  places?: Places
   run: ShellRun
   columns: number
   isOpen: boolean
@@ -137,7 +140,8 @@ function Header(
 ): RenderElement {
   const { Box, Text, Button } = card.els
   const icon = commandIcon(card.command, card.iconMode)
-  const parts = subtitle === undefined ? [] : subtitle.isToned ? toneParts(subtitle.text) : [{ text: subtitle.text }]
+  const shown = subtitle === undefined ? '' : shortPaths(subtitle.text, card.places)
+  const parts = subtitle === undefined ? [] : subtitle.isToned ? toneParts(shown, subtitle.isStrong === true) : [{ text: shown }]
   // The mark stays quiet even where the line opens on a toned count.
   if (subtitle !== undefined && parts[0]?.tone !== undefined) parts.unshift({ text: '' })
   return (
@@ -148,7 +152,7 @@ function Header(
       </Box>
       <Box flexGrow={1} flexShrink={1}>
         <Text wrap="truncate-end">
-          <Text bold>{displayTitle(card.title, card.command)}</Text>
+          <Text bold>{shortPaths(displayTitle(card.title, card.command), card.places)}</Text>
           {subtitle !== undefined && parts.map((part, i) => (
             <Text color={part.tone} dimColor={part.tone === undefined && !subtitle.isStrong}>
               {i === 0 ? `  ${subtitle.mark} ${part.text}` : part.text}
@@ -464,8 +468,8 @@ type Row = {
 }
 
 /**
- * A shell as one line: glyph, what it is for, the output line that says most
- * (or its command), chips and timing. Details open the rest; where the card
+ * A shell as one line: glyph, what it is for, the output line that says how it
+ * went (its command where the output is content, or there is none), chips and timing. Details open the rest; where the card
  * does not own the output, the engine's result block follows.
  */
 function Compact(card: Card, row: Row): RenderElement {
@@ -502,7 +506,7 @@ function Failed(card: Card, code: number, text: string): RenderElement {
       .filter(part => part !== undefined).join(' · ')
     return Compact(card, {
       glyph: '✘', color: 'error', meta: [{ text: meta, color: 'error' }],
-      gist: gistOf(lines), isToned: true, isStrong: true, details: null,
+      gist: gistOf(lines, 'error'), isToned: true, isStrong: true, details: null,
     })
   }
   return (
@@ -596,17 +600,19 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
     if (status === undefined) {
       return Compact(card, { glyph: '◉', color: 'suggestion', meta: [{ text: `background · ${taskId}` }], chips, details })
     }
-    const gist = gistOf(run.tail.slice(-GIST_LINES))
     const lines = run.lines ?? run.tail.length
     const exit = run.background?.exitCode
+    const isKilled = status === 'killed' || status === 'stopped'
+    const isOk = !isKilled && status === 'completed' && (exit === undefined || exit === 0)
+    // A failed shell's last line is why it failed, never just where content stopped.
+    const output = status !== 'finished' && !isKilled && !isOk ? 'error' : endsInContent(card.command) ? 'content' : 'verdict'
+    const gist = gistOf(run.tail.slice(-GIST_LINES), output)
     if (status === 'finished') {
       return Compact(card, {
         glyph: '○', color: 'subtle', meta: metaOf(card, lines, ['background', 'finished · exit unknown']),
         gist, isToned: true, chips, details,
       })
     }
-    const isKilled = status === 'killed' || status === 'stopped'
-    const isOk = !isKilled && status === 'completed' && (exit === undefined || exit === 0)
     const word = isKilled ? 'stopped' : exit === undefined ? status : `exit ${exit}`
     return Compact(card, {
       glyph: isKilled ? '■' : isOk ? '✔' : '✘',
@@ -623,7 +629,7 @@ export function drawCard(card: Card, props: ToolUseProps): RenderElement {
     glyph: '✔',
     color: 'success',
     meta: metaOf(card, countLines(stdout) + countLines(stderr)),
-    gist: gistOf(shown.length > 0 ? shown : tailLines(stderr, GIST_LINES)),
+    gist: gistOf(shown.length > 0 ? shown : tailLines(stderr, GIST_LINES), endsInContent(card.command) ? 'content' : 'verdict'),
     isToned: true,
     chips,
     details,

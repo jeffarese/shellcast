@@ -93,29 +93,95 @@ export function tidy(line: string): string {
 
 const COUNTED = '(?:passed|passing|failed|failing|failures?|errors?|problems?|warnings?)'
 const RESULT = new RegExp(`\\b\\d+\\s+(?:tests?\\s+)?${COUNTED}\\b`, 'i')
-const COUNTS = new RegExp(`\\b(\\d+)\\s+(${COUNTED})\\b`, 'gi')
+// Words that name a failure or a warning, as a log line or a compiler writes them.
+const BAD = '(?:[a-z]*errors?|fail(?:ed|ure|ures|s)?|fatal|denied|not found)'
+const WARN = '(?:warn(?:ing|ings|s)?|deprecat(?:ed|ion))'
+// A count (`2 failed`), a denial (`no errors`), or one of those words: whole
+// words only, never part of a path, a file name, a flag or a `key=value`.
+const TOKENS = new RegExp(
+  `(?<![\\w./-])(?:(\\d+)\\s+(${COUNTED})|(?:no|without|zero)\\s+(?:${BAD}|${WARN})|(${BAD})|(${WARN}))(?![\\w/=-]|\\.\\w)`,
+  'gi',
+)
 // What a package runner adds after the command's own last word.
 const BOILERPLATE = /^(?:npm (?:ERR!|error|notice)|ELIFECYCLE\b|error Command failed|info Visit |make(?:\[\d+\])?: \*\*\*|exit status \d+$|Ran all test suites|run `npm fund`|\d+ packages are looking for funding)/i
 const GIST_WINDOW = 6
 
+// A line with no letter or digit (`}`, `});`, `---`): it says nothing.
+const BARE = /^[^\p{L}\p{N}]*$/u
+// A line of JSON or of a printed dict or list: data, not a sentence.
+const BLOB = /^[[{]\s*["'[{]/
+// A line `grep -n` or a diff numbered (`293: text`, `src/a.ts:84: text`, `457-}`), but not a time or a date.
+const NUMBERED = /^(?:[^\s:]+:)?\d+[:-](?!\d{2}\b)/
+
+/**
+ * What a command's output is, for choosing its gist: a `verdict` unless its
+ * last line gives it away as content; `content` where the command says so (a
+ * read, a search, a listing); an `error`, the output of a command that failed.
+ */
+export type Output = 'verdict' | 'content' | 'error'
+
 /**
  * The one line that says how a finished command went: its newest result line
  * (`Tests 2 failed, 71 passed`, `✖ 2 problems`) among the last few, else its
- * last line that is not a runner's boilerplate, else its last line.
+ * last line that is not a runner's boilerplate.
+ *
+ * Nothing where the output is content rather than a verdict: a file that was
+ * read, the matches of a search, a listing (`content`, from the command), or
+ * a last line that is a numbered source line, a line of JSON or brackets
+ * alone. The last line of those is only where they stopped, and the row shows
+ * the command instead.
+ *
+ * A failure is never content: `./main.go:12:5: undefined: x` is numbered the
+ * way a search's matches are, and it is why the command failed. Only lines of
+ * brackets alone are passed over, for the line before them.
  */
-export function gistOf(lines: readonly string[]): string | undefined {
+export function gistOf(lines: readonly string[], output: Output = 'verdict'): string | undefined {
+  let isContent = output === 'content'
   let last: string | undefined
   let plain: string | undefined
   let seen = 0
   for (let i = lines.length - 1; i >= 0 && seen < GIST_WINDOW; i--) {
     const line = tidy(lines[i]!)
-    if (line === '') continue
+    if (line === '' || (output === 'error' && BARE.test(line))) continue
     seen++
     if (RESULT.test(line)) return line
+    if (output === 'verdict' && last === undefined && (BARE.test(line) || NUMBERED.test(line) || BLOB.test(line))) isContent = true
     last ??= line
     if (plain === undefined && !BOILERPLATE.test(line)) plain = line
   }
-  return plain ?? last
+  return isContent ? undefined : plain ?? last
+}
+
+/** Where a session works, for writing paths the short way. */
+export type Places = { cwd?: string; home?: string }
+
+// Claude Code's own scratch folder for a session: <tmp>/claude-<uid>/<project>/<session>/.
+const SESSION_TMP = /(?:\/private)?\/tmp\/claude-\d+\/[^/\s]+\/[0-9a-f]{8}-[0-9a-f-]{27}\//g
+
+function swapPrefix(text: string, prefix: string, to: string): string {
+  if (prefix.length < 2) return text
+  let out = ''
+  let at = 0
+  for (;;) {
+    const found = text.indexOf(prefix, at)
+    if (found < 0) return out + text.slice(at)
+    // Only where a path starts: not in the middle of a longer one.
+    const isStart = found === 0 || /[\s"'`=(:,[<>]/.test(text[found - 1]!)
+    out += text.slice(at, found) + (isStart ? to : prefix)
+    at = found + prefix.length
+  }
+}
+
+/**
+ * A row's text with its paths the short way: under the working folder as
+ * relative, under home as `~/`, the session's scratch folder as `…/`.
+ * Display only; details keep the command as it ran.
+ */
+export function shortPaths(text: string, places: Places | undefined): string {
+  let out = text.replace(SESSION_TMP, '…/')
+  if (places?.cwd !== undefined) out = swapPrefix(out, `${places.cwd.replace(/\/+$/, '')}/`, '')
+  if (places?.home !== undefined) out = swapPrefix(out, `${places.home.replace(/\/+$/, '')}/`, '~/')
+  return out
 }
 
 /** The newest line that shows anything, for a row that follows live output. */
@@ -130,16 +196,33 @@ export function lastLine(lines: readonly string[]): string | undefined {
 export type Tone = 'success' | 'error' | 'warning'
 
 /**
- * A result line cut where it counts outcomes, each count above zero toned:
- * `2 failed` as an error, `71 passed` as a success, `3 warnings` as a warning.
+ * A result line cut where it says how things went, each part toned.
+ *
+ * Counts above zero: `2 failed` as an error, `71 passed` as a success,
+ * `3 warnings` as a warning. Warning words (`warning`, `deprecated`), so a
+ * command that ended well but complained is not missed. Failure words
+ * (`error`, `failed`, `fatal`, `denied`, `not found`) on a failed command's
+ * line; on one that ended well only where they label the line (`error:`,
+ * `ERROR`), for there `added error handling` is no error.
+ *
+ * Never a denial (`no errors`, `0 warnings`), nor a word inside a path, a
+ * file name, a flag or a `key=value`.
  */
-export function toneParts(text: string): { text: string; tone?: Tone }[] {
+export function toneParts(text: string, isFailure = false): { text: string; tone?: Tone }[] {
   const parts: { text: string; tone?: Tone }[] = []
   let at = 0
-  for (const found of text.matchAll(COUNTS)) {
-    if (Number(found[1]) === 0) continue
-    const word = found[2]!.toLowerCase()
-    const tone: Tone = word.startsWith('pass') ? 'success' : word.startsWith('warn') ? 'warning' : 'error'
+  for (const found of text.matchAll(TOKENS)) {
+    let tone: Tone | undefined
+    if (found[2] !== undefined) {
+      const word = found[2].toLowerCase()
+      if (Number(found[1]) > 0) tone = word.startsWith('pass') ? 'success' : word.startsWith('warn') ? 'warning' : 'error'
+    } else if (found[3] !== undefined) {
+      const isLabel = text[found.index + found[0].length] === ':' || found[0] === found[0].toUpperCase()
+      if (isFailure || isLabel) tone = 'error'
+    } else if (found[4] !== undefined) {
+      tone = 'warning'
+    }
+    if (tone === undefined) continue
     if (found.index > at) parts.push({ text: text.slice(at, found.index) })
     parts.push({ text: found[0], tone })
     at = found.index + found[0].length

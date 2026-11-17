@@ -27,6 +27,9 @@ Compact command labels omit leading directory setup: `cd /long/worktree/path && 
 ✔ ⚗ Run the test suite  ⎿ Tests 73 passed (73)                    13 lines · 5.3s  ▸ details
 ✔ ⚙ Production build  ⎿ ✓ built in 4.61s                           6 lines · 4.7s  ▸ details
 ✘ $ Lint the codebase  ⎿ ✖ 2 problems (2 errors, 0 warnings)        exit 1 · 1.8s  ▸ details
+✔ ▤ Read the header state logic  $ sed -n 40,80p src/header/state.ts  41 lines · 0.1s  ▸ details
+✔ ⌕ Find the pluralize helper  $ grep -rn "pluralize" src | head -20   3 lines · 0.1s  ▸ details
+✔ λ Count reviews over the week  ⎿ reviews 534 issues 32            3 lines · 1.4s  ▸ details
 ⠴ ⚙ Bundle the app  ⎿ [42/120] compiling src/cart.ts      ━━━╸────── 42/120 · 11s  ▸ details
 ⠴ ⚙ Type-check  ⎿ > tsc --noEmit                                  quiet 45s · 47s  ▸ details
 ```
@@ -34,7 +37,9 @@ Compact command labels omit leading directory setup: `cd /long/worktree/path && 
 Each row is built to be read at a glance:
 
 - **The line that says how it went.** A finished row shows the command's result line (`Tests 2 failed, 71 passed`, `✖ 2 problems`, `12 passed in 0.42s`) when one is among its last few lines, not whatever was printed last. Failing that it shows the last line the command itself printed, skipping a package runner's trailer such as `npm ERR!` or `ELIFECYCLE`. Banner rules and column padding are removed.
-- **Counts in color.** In that line, counts above zero are toned: passed in green, failed, errors and problems in red, warnings in yellow. A failed row's line is drawn at full strength, so it stands out among dim successes.
+- **The command, where output is content.** Most of what an agent runs reads files, searches and lists, and the last line of that is only where the file or the matches stopped (`}`, `293: const x = …`). Those rows show what ran instead: `$ sed -n 40,80p src/header.ts`. That covers a last pipeline that reads, searches or lists (`| head -20` only trims it), `git diff`, `git log` and `gh … view`, and any output ending in a numbered source line, a line of JSON or a line of brackets. A count (`| wc -l`), `git diff --stat` and a result line stay verdicts. A failed command always keeps its error line, even one numbered like a search match (`./main.go:12:5: undefined: x`).
+- **Short paths.** In a row, a path under the working folder is written relative, one under home as `~/…`, and the session's own scratch folder as `…/`. Details keep the command exactly as it ran.
+- **Counts and a few words in color.** In that line, counts above zero are toned: passed in green, failed, errors and problems in red, warnings in yellow. So are the words `warning` and `deprecated`, so a command that ended well but complained is not missed, and on a failed row the word that says why: `error`, `failed`, `fatal`, `denied`, `not found`. A denial (`no errors`, `0 warnings`) and a word inside a path, a file name or a flag are left alone, and the command text is never colored. A failed row's line is drawn at full strength, so it stands out among dim successes.
 - **Times in one column.** The duration is always the last thing on the right, so times line up down the transcript.
 - **Is it stuck?** A running row says `quiet 45s` once its shell has printed nothing for 15 seconds, and `no output yet` if it never has. Reported progress (`42%`, `[12/40]`) draws a small bar. Past half its timeout the row counts down: `⏱ 25s left`.
 - **Signal exits named.** `exit 137 · killed`, `exit 130 · interrupted`, `exit 143 · terminated`, `exit 139 · segfault`, `exit 124 · timed out`.
@@ -56,7 +61,7 @@ Answer `y` to add the marketplace, then pick a scope (user scope loads it in eve
 | --- | --- |
 | **Starting** | A quiet one-line row with a spinner. |
 | **Running** | Always a compact row: spinner, title, latest output in fullscreen, a small bar for reported progress, how long the shell has been quiet, elapsed time and a countdown past half the timeout. Long-running commands stay on one line too; command and output details open only when requested. |
-| **Done** | A one-liner: `✔`, the description, the result line of the output (the command when there is none), line count and duration. Chips appear for git commits, pushes and PRs, edited files, saved output, unsandboxed runs and timeouts. |
+| **Done** | A one-liner: `✔`, the description, the result line of the output (the command when there is none, or when the output is content such as a file or search matches), line count and duration. Chips appear for git commits, pushes and PRs, edited files, saved output, unsandboxed runs and timeouts. |
 | **Completed block** | Consecutive successful tools collapse into a description such as `✔ Searched for 1 pattern, read 1 file, ran 7 shell commands`, followed by their icons and elapsed time when observed. Repeated icons get a count. Long summaries wrap to keep the description and icons visible. In fullscreen, `▸ details` restores the individual rows; each shell still has its own output toggle. Active blocks, failures, interruptions and pending results stay visible. |
 | **Failed** | The same one-liner with a red `✘` and exit code, and its result or error line at full strength. A call you declined shows as `⊘ not run`, not as a failure. |
 | **Background** | A compact row stays above the prompt with the title, latest output, a small bar for reported progress, how long it has been quiet and elapsed time. At most three shells are shown, with an overflow count for the rest; nothing in these rows animates. The footer describes one shell and counts the others. At each main turn's end, the plugin reconciles its list with Claude Code's active tasks, removing stale rows even if a completion notice was missed. Another plugin can run ahead of shellcast and skip those hooks. Until shellcast's own `session.append` hook has run in a session, it also reads completion notices from the transcript every three seconds while a background shell runs. The transcript keeps each shell's details and final result; a missing exit status is shown as `finished · exit unknown`. Set `SHELLCAST_BACKGROUND=cards` before starting Claude Code to restore full pinned cards. |
@@ -68,13 +73,13 @@ Successful `Write` calls in the terminal keep just the `Write(path)` header and 
 
 ### Command icons
 
-A muted command icon sits between the status indicator and the title, including running, failed and background rows. Reading, listing, navigating, searching, editing, deleting, copying, moving, creating, Git, tests, builds and downloads each have their own icon.
+A muted command icon sits between the status indicator and the title, including running, failed and background rows. Reading, listing, navigating, searching, editing, deleting, copying, moving, creating, Git, tests, builds, downloads and scripts each have their own icon.
 
 Set `SHELLCAST_ICONS` before starting Claude Code:
 
 | Value | Icons |
 | --- | --- |
-| `unicode` (default) | Plain symbols such as `▤` for reading, `≡` for listing and `↳` for navigation. |
+| `unicode` (default) | Plain symbols such as `▤` for reading, `≡` for listing, `λ` for scripts and `↳` for navigation. |
 | `nerd` | Set A: thin Codicons outlines. |
 | `nerd-bold` | Set B: bolder Font Awesome symbols, with a Git logo and folder-plus icon. |
 | `none` | Status indicators only. |
@@ -87,7 +92,7 @@ SHELLCAST_ICONS=nerd-bold claude
 
 To keep the preference, add `export SHELLCAST_ICONS=nerd-bold` to your shell configuration, or set `env.SHELLCAST_ICONS` in `~/.claude/settings.json` for all Claude sessions. Use `nerd` to switch back to A. The font choice is explicit, rather than inferred from which fonts are installed.
 
-Labels come from the command, not its description: `sed -n` gets a document and `sed -i` a pencil. Leading directory changes are skipped when another command follows (`cd project && npm test` gets a flask). Detection is best effort for shell scripts; unknown commands get a terminal icon. Icon selection never changes command execution.
+Labels come from the command, not its description: `sed -n` gets a document and `sed -i` a pencil. Setup is skipped when another command follows: directory changes, assignments, `echo`, `set`, `sleep` and a loop's head (`cd project && npm test` gets a flask; `OUT=/tmp/x; for f in *.ts; do sed -n 1,5p "$f"; done` a document). An interpreter running a file, a heredoc or a one-liner (`python3`, `node`, `bash`, `osascript`…) is a script, unless what it runs says more (`python3 -m pytest`, `npx vitest`). `cat > file <<EOF` is an edit, `npm install` a download, and wrappers such as `timeout 120` are looked through. A heredoc's body is never read as commands. Detection is best effort for shell scripts; unknown commands get a terminal icon. Icon selection never changes command execution.
 
 ### Keeping some tools unfolded
 

@@ -653,3 +653,61 @@ test('reported progress draws a small bar in the row and in the band', () => {
   const idle = { ...shell, run: { ...shell.run, now: 61_000, outputAt: 21_000, tail: ['ready on :5173'] } }
   expect(shown(drawPinned(ELS, [idle], 100, 10, 'none'))).toContain('Build  ready on :5173  quiet 40s · 1m 00s')
 })
+
+test('a read, a search or a listing shows its command, not the line its output stopped on', async ($, on) => {
+  mock.env(on, { HOME: '/Users/dev' })
+  on('session.cwd', () => ({ value: '/Users/dev/workspace/app' }))
+  const read = { command: 'cd /Users/dev/workspace/app && sed -n 40,80p /Users/dev/workspace/app/src/header.ts', description: 'Read the header state logic' }
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+    props: call({ input: read, output: { stdout: 'export function header() {\n  return out\n}\n', stderr: '', interrupted: false } }) })
+  expect(await ui.find({ type: 'Text', text: 'Read the header state logic' })).toBeDefined()
+  // The command, with its path relative to the working folder.
+  expect(await ui.find({ type: 'Text', text: '$ sed -n 40,80p src/header.ts' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '⎿' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: '3 lines' })).toBeDefined()
+  // A search that ends on a match line, and a script that prints JSON, do the same.
+  await ui.redraw(call({ input: { command: 'python3 tools/find.py pluralize', description: 'Find the pluralize helper' },
+    output: { stdout: 'src/util/text.ts:12:export function pluralize() {\n293: stepCount ? pluralize(stepCount, "step") : "",\n', stderr: '', interrupted: false } }))
+  expect(await ui.find({ type: 'Text', text: '$ python3 tools/find.py pluralize' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /stepCount/ })).toBeUndefined()
+  // A script whose last line is a sentence still ends in it.
+  await ui.redraw(call({ input: { command: 'python3 scripts/count.py --days 7', description: 'Count reviews over the week' },
+    output: { stdout: 'reading…\nreviews 534 issues 32 people with none 5\n', stderr: '', interrupted: false } }))
+  expect(await ui.find({ type: 'Text', text: '⎿ reviews 534 issues 32 people with none 5' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'λ ' })).toBeDefined()
+  // Details still hold the whole output and the command as it ran.
+  await ui.redraw(call({ input: read, output: { stdout: 'export function header() {\n  return out\n}\n', stderr: '', interrupted: false } }))
+  await ui.press({ key: 'details' })
+  expect(await ui.find({ type: 'Text', text: 'return out' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn())).toContain('cd /Users/dev/workspace/app && sed -n 40,80p /Users/dev/workspace/app/src/header.ts')
+})
+
+test('a failed row keeps a compiler error that is numbered like a search match', async ($, on) => {
+  mock.env(on, {})
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+    props: call({ input: { command: 'grep -rn TODO src; go build ./...', description: 'Build the service' }, isErrored: true,
+      output: 'Exit code 1\n# example.com/app\n./main.go:12:5: undefined: x\n' }) })
+  expect(await ui.find({ type: 'Text', text: '⎿ ./main.go:12:5: undefined: x' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'exit 1' })).toBeDefined()
+  // The same search, ending well, shows its command.
+  await ui.redraw(call({ input: { command: 'grep -rn TODO src', description: 'Find the TODOs' },
+    output: { stdout: './main.go:12:5: // TODO: x\n', stderr: '', interrupted: false } }))
+  expect(await ui.find({ type: 'Text', text: '$ grep -rn TODO src' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /main\.go/ })).toBeUndefined()
+})
+
+test('a row that ended well but warned shows the warning in its own tone', async ($, on) => {
+  mock.env(on, {})
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', viewport: VIEWPORT,
+    props: call({ input: { command: 'cargo build', description: 'Build the service' },
+      output: { stdout: '   Compiling app v0.1.0\nwarning: `app` (bin) generated 3 warnings\n', stderr: '', interrupted: false } }) })
+  expect((await ui.findAll({ type: 'Text', text: 'warning' })).some(found => found.text === 'warning')).toBe(true)
+  expect((await ui.findAll({ type: 'Text', text: '3 warnings' })).some(found => found.text === '3 warnings')).toBe(true)
+  // A failed row tones the word that says why; one that ended well leaves prose alone.
+  await ui.redraw(call({ input: { command: 'git status', description: 'Check the repo' }, isErrored: true,
+    output: 'Exit code 128\nfatal: not a git repository (or any of the parent directories): .git\n' }))
+  expect((await ui.findAll({ type: 'Text', text: 'fatal' })).some(found => found.text === 'fatal')).toBe(true)
+  await ui.redraw(call({ input: { command: 'python3 tools/patch.py', description: 'Patch the parser' },
+    output: { stdout: 'Added error handling to the parser\n', stderr: '', interrupted: false } }))
+  expect((await ui.findAll({ type: 'Text', text: 'error' })).some(found => found.text === 'error')).toBe(false)
+})
